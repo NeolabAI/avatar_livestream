@@ -1,0 +1,1699 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LiveTalking — Đọc Kịch Bản</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css">
+    <style>
+        :root {
+            --primary-color: #4361ee;
+            --secondary-color: #3f37c9;
+            --accent-color: #4895ef;
+            --background-color: #f8f9fa;
+            --card-bg: #ffffff;
+            --text-color: #212529;
+            --border-radius: 10px;
+            --box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: var(--background-color);
+            color: var(--text-color);
+            min-height: 100vh;
+            padding-top: 20px;
+        }
+
+        .dashboard-container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        .card {
+            background-color: var(--card-bg);
+            border-radius: var(--border-radius);
+            box-shadow: var(--box-shadow);
+            border: none;
+            margin-bottom: 20px;
+            overflow: hidden;
+        }
+
+        .card-header {
+            background-color: var(--primary-color);
+            color: white;
+            font-weight: 600;
+            padding: 15px 20px;
+            border-bottom: none;
+        }
+
+        .video-container {
+            position: relative;
+            width: 100%;
+            background-color: #000;
+            border-radius: var(--border-radius);
+            overflow: hidden;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 280px;
+        }
+
+        video {
+            max-width: 100%;
+            max-height: 100%;
+            display: block;
+            border-radius: var(--border-radius);
+        }
+
+        .btn-primary {
+            background-color: var(--primary-color);
+            border-color: var(--primary-color);
+        }
+
+        .btn-primary:hover {
+            background-color: var(--secondary-color);
+            border-color: var(--secondary-color);
+        }
+
+        .status-indicator {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            display: inline-block;
+            margin-right: 5px;
+        }
+
+        .status-connected    { background-color: #28a745; }
+        .status-disconnected { background-color: #dc3545; }
+        .status-connecting   { background-color: #ffc107; }
+
+        /* ── Script list ── */
+        .script-list {
+            height: 300px;
+            overflow-y: auto;
+            border: 1px solid #dee2e6;
+            border-radius: 8px;
+            padding: 6px;
+            background: #f8f9fa;
+        }
+
+        .script-line {
+            display: flex;
+            align-items: flex-start;
+            padding: 6px 10px;
+            margin-bottom: 3px;
+            border-radius: 6px;
+            cursor: pointer;
+            border: 2px solid transparent;
+            font-size: 0.875rem;
+            line-height: 1.45;
+            transition: background 0.12s, border-color 0.12s;
+            user-select: none;
+        }
+
+        .script-line:hover { background-color: #e9ecef; }
+
+        .script-line.current {
+            background-color: #d1e7ff;
+            border-color: var(--primary-color);
+            font-weight: 600;
+        }
+
+        .script-line.done {
+            color: #adb5bd;
+        }
+
+        .script-line .line-num {
+            flex-shrink: 0;
+            width: 28px;
+            color: #adb5bd;
+            font-size: 0.75rem;
+            padding-top: 2px;
+            text-align: right;
+            margin-right: 8px;
+        }
+
+        .script-line.current .line-num { color: var(--primary-color); }
+
+        /* ── Progress bar ── */
+        .progress-bar-thin {
+            height: 5px;
+            border-radius: 3px;
+            background: #dee2e6;
+            overflow: hidden;
+            margin-bottom: 12px;
+        }
+
+        .progress-bar-thin .fill {
+            height: 100%;
+            background: var(--primary-color);
+            transition: width 0.35s ease;
+        }
+
+        /* ── Control row ── */
+        .control-row {
+            display: flex;
+            gap: 8px;
+        }
+
+        .control-row .btn { flex: 1; }
+
+        /* ── Status chip ── */
+        .play-status {
+            font-size: 0.82rem;
+            color: #6c757d;
+            margin-top: 8px;
+            min-height: 18px;
+        }
+
+        .footer {
+            text-align: center;
+            margin-top: 20px;
+            padding: 15px 0;
+            color: #6c757d;
+            font-size: 0.9rem;
+        }
+
+        .file-drop-hint {
+            font-size: 0.8rem;
+            color: #6c757d;
+            margin-top: 4px;
+        }
+    </style>
+</head>
+<body>
+<div class="dashboard-container">
+    <div class="row mb-2">
+        <div class="col-12">
+            <h1 class="text-center mb-4">LiveTalking — Đọc Kịch Bản</h1>
+        </div>
+    </div>
+
+    <div class="card mb-3">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <span><i class="bi bi-cpu"></i> Server model</span>
+            <span class="small" id="server-running-model">Đang chạy: —</span>
+        </div>
+        <div class="card-body">
+            <div class="row g-2 align-items-center">
+                <div class="col-md-7">
+                    <select class="form-select form-select-sm" id="server-model">
+                        <option value="musetalk">MuseTalk</option>
+                        <option value="wav2lip">Wav2Lip</option>
+                    </select>
+                </div>
+                <div class="col-md-5">
+                    <button class="btn btn-primary btn-sm w-100" id="btn-apply-model" type="button">
+                        <i class="bi bi-arrow-repeat"></i> Áp dụng &amp; khởi động lại
+                    </button>
+                </div>
+            </div>
+            <div class="small text-muted mt-2" id="model-status">Đang kiểm tra server…</div>
+            <div class="small text-muted">Chọn model rồi nhấn nút — server sẽ tự khởi động lại sang model đó (script chỉ chạy toàn bộ frontend, không cố định avatar).</div>
+        </div>
+    </div>
+
+    <div class="card mb-3">
+        <div class="card-body">
+            <div class="d-flex justify-content-between align-items-center mb-2">
+                <div class="fw-semibold">Avatar <span class="small text-muted" id="avatar-running-model">(MuseTalk)</span></div>
+                <div class="d-flex gap-2">
+                    <button class="btn btn-outline-secondary btn-sm" id="btn-refresh-avatars" type="button">
+                        <i class="bi bi-arrow-repeat"></i> Làm mới
+                    </button>
+                    <button class="btn btn-outline-danger btn-sm" id="btn-delete-avatars" type="button" title="Xóa avatar (1 hoặc nhiều)">
+                        <i class="bi bi-trash"></i> Xóa avatar
+                    </button>
+                </div>
+            </div>
+            <select class="form-select form-select-sm mb-2" id="avatar-select"></select>
+            <div class="small text-muted">Chọn avatar hiện có hoặc tạo avatar mới (MuseTalk / Wav2Lip) từ ảnh / video.</div>
+            <div class="border rounded-3 p-3 mt-3 bg-white">
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <div class="fw-semibold small">Tạo avatar mới</div>
+                    <select class="form-select form-select-sm" id="new-avatar-model" style="width:auto">
+                        <option value="musetalk" selected>MuseTalk</option>
+                        <option value="wav2lip">Wav2Lip</option>
+                    </select>
+                </div>
+                <div class="row g-2">
+                    <div class="col-md-4">
+                        <input type="text" class="form-control form-control-sm" id="new-avatar-id" placeholder="avatar_id mới">
+                    </div>
+                    <div class="col-md-5">
+                        <input type="file" class="form-control form-control-sm" id="new-avatar-file" accept="image/*,video/*">
+                    </div>
+                    <div class="col-md-3">
+                        <button class="btn btn-primary btn-sm w-100" id="btn-create-avatar" type="button">
+                            <i class="bi bi-person-badge"></i> Tạo avatar
+                        </button>
+                    </div>
+                </div>
+
+                <!-- MuseTalk params -->
+                <div class="row g-2 mt-2" id="musetalk-params">
+                    <div class="col-md-3">
+                        <select class="form-select form-select-sm" id="new-avatar-version">
+                            <option value="v15" selected>v15</option>
+                            <option value="v1">v1</option>
+                        </select>
+                    </div>
+                    <div class="col-md-3">
+                        <input type="number" class="form-control form-control-sm" id="new-avatar-bbox-shift" value="0" placeholder="bbox_shift">
+                    </div>
+                    <div class="col-md-3">
+                        <input type="number" class="form-control form-control-sm" id="new-avatar-extra-margin" value="10" placeholder="extra_margin">
+                    </div>
+                    <div class="col-md-3">
+                        <input type="number" class="form-control form-control-sm" id="new-avatar-gpu-id" value="0" placeholder="gpu_id">
+                    </div>
+                </div>
+
+                <!-- Wav2Lip params -->
+                <div class="row g-2 mt-2" id="wav2lip-params" style="display:none">
+                    <div class="col-md-2">
+                        <input type="number" class="form-control form-control-sm" id="wav2lip-img-size" value="96" placeholder="img_size">
+                    </div>
+                    <div class="col-md-2">
+                        <input type="number" class="form-control form-control-sm" id="wav2lip-pad-top" value="0" placeholder="pad top">
+                    </div>
+                    <div class="col-md-2">
+                        <input type="number" class="form-control form-control-sm" id="wav2lip-pad-bottom" value="10" placeholder="pad bottom">
+                    </div>
+                    <div class="col-md-2">
+                        <input type="number" class="form-control form-control-sm" id="wav2lip-pad-left" value="0" placeholder="pad left">
+                    </div>
+                    <div class="col-md-2">
+                        <input type="number" class="form-control form-control-sm" id="wav2lip-pad-right" value="0" placeholder="pad right">
+                    </div>
+                    <div class="col-md-2">
+                        <input type="number" class="form-control form-control-sm" id="wav2lip-batch" value="16" placeholder="face_det_batch">
+                    </div>
+                </div>
+                <div class="row g-2 mt-2 align-items-center" id="wav2lip-params2" style="display:none">
+                    <div class="col-md-6 form-check ms-2">
+                        <input class="form-check-input" type="checkbox" id="wav2lip-nosmooth">
+                        <label class="form-check-label small" for="wav2lip-nosmooth">nosmooth (tắt làm mịn box)</label>
+                    </div>
+                    <div class="col-md-3">
+                        <input type="number" class="form-control form-control-sm" id="wav2lip-gpu-id" value="0" placeholder="gpu_id">
+                    </div>
+                </div>
+
+                <div class="small text-muted mt-2" id="create-hint">Ảnh hoặc video sẽ được xử lý thành avatar MuseTalk, rồi xuất hiện trong danh sách ở trên.</div>
+                <div class="small text-warning mt-1" id="wav2lip-warn" style="display:none">Lưu ý: avatar Wav2Lip chỉ dùng được khi server chạy <code>--model wav2lip</code>. Server hiện chạy MuseTalk nên sẽ không xuất hiện trong danh sách trên.</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row">
+        <!-- ── Video column ── -->
+        <div class="col-lg-7">
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <div>
+                        <span class="status-indicator status-disconnected" id="connection-status"></span>
+                        <span id="status-text">Chưa kết nối</span>
+                    </div>
+                </div>
+                <div class="card-body p-0">
+                    <div class="video-container">
+                        <video id="video" autoplay playsinline></video>
+                        <audio id="audio" autoplay style="display:none;"></audio>
+                    </div>
+                    <div class="p-3">
+                        <div class="row g-2">
+                            <div class="col-6">
+                                <button class="btn btn-primary w-100" id="btn-connect">
+                                    <i class="bi bi-play-fill"></i> Bắt đầu kết nối
+                                </button>
+                            </div>
+                            <div class="col-6">
+                                <button class="btn btn-danger w-100" id="btn-disconnect" style="display:none">
+                                    <i class="bi bi-stop-fill"></i> Ngắt kết nối
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ── Script column ── -->
+        <div class="col-lg-5">
+            <div class="card h-100">
+                <div class="card-header">Kịch bản</div>
+                <div class="card-body">
+
+                    <!-- INPUT SECTION: load file → prepare -->
+                    <div id="input-section">
+                        <div class="d-flex gap-2 align-items-center mb-2">
+                            <button class="btn btn-outline-secondary btn-sm" id="btn-load-file">
+                                <i class="bi bi-folder2-open"></i> Load file .txt
+                            </button>
+                            <span class="text-muted small ms-1">Gửi cả kịch bản một lần — ElevenLabs tự prefetch, không delay giữa các dòng.</span>
+                        </div>
+                        <textarea class="form-control mb-1" id="script-textarea" rows="11"
+                            placeholder="Load file .txt hoặc dán kịch bản tại đây..."></textarea>
+                        <div class="file-drop-hint">Hỗ trợ file .txt, .docx, .pdf</div>
+
+                        <!-- ── Tùy chọn phát âm: bỏ dòng phiên âm + từ điển tên riêng ── -->
+                        <details class="mt-2 mb-1" id="pron-options">
+                            <summary class="small text-muted" style="cursor:pointer">
+                                Tùy chọn phát âm (bỏ dòng phiên âm / từ điển tên)
+                            </summary>
+                            <div class="form-check small mt-2">
+                                <input class="form-check-input" type="checkbox" id="opt-strip-phonetic" checked>
+                                <label class="form-check-label" for="opt-strip-phonetic">
+                                    Bỏ dòng phiên âm (≥3 token âm tiết gạch nối, vd "In-phi-ni-ti Âu-ây-sịt")
+                                </label>
+                            </div>
+                            <div class="small text-muted mt-2 mb-1">
+                                Từ điển phát âm — mỗi dòng <code>tên =&gt; cách_đọc</code> (áp dụng trước khi bỏ dòng, phân biệt hoa thường):
+                            </div>
+                            <textarea class="form-control form-control-sm" id="pron-dict" rows="4"
+                                placeholder="3 đê Mapping => 3D Mapping&#10;Hologram => Hologram"></textarea>
+                            <div class="small text-muted mt-1">
+                                Mẹo: để eleven_v3 đọc tên tiếng Anh, giữ nguyên tên gốc (vd <code>Infinity</code>).
+                                Chỉ map khi một cách viết cụ thể đọc đúng hơn. Không dùng gạch nối âm tiết.
+                            </div>
+                        </details>
+
+                        <button class="btn btn-primary w-100 mt-3" id="btn-prepare">
+                            <i class="bi bi-list-ol"></i> Chuẩn bị kịch bản
+                        </button>
+                    </div>
+
+                    <!-- PLAYER SECTION: shown after prepare -->
+                    <div id="player-section" style="display:none">
+                        <!-- Progress -->
+                        <div class="d-flex justify-content-between align-items-center mb-1">
+                            <span class="fw-semibold small" id="progress-text">0 / 0 dòng</span>
+                            <span id="rec-indicator" style="display:none;color:#dc3545;font-weight:700;margin-left:8px;">● REC</span>
+                            <button class="btn btn-link btn-sm text-muted p-0 text-decoration-none" id="btn-edit">
+                                <i class="bi bi-pencil"></i> Sửa kịch bản
+                            </button>
+                        </div>
+                        <div class="progress-bar-thin">
+                            <div class="fill" id="progress-fill" style="width:0%"></div>
+                        </div>
+
+                        <!-- Line list -->
+                        <div class="script-list mb-3" id="script-list"></div>
+
+                        <!-- Controls -->
+                        <div class="control-row mb-1">
+                            <button class="btn btn-success" id="btn-play" disabled>
+                                <i class="bi bi-play-fill"></i> Bắt đầu
+                            </button>
+                            <button class="btn btn-warning" id="btn-pause" style="display:none" disabled>
+                                <i class="bi bi-pause-fill"></i> Tạm dừng
+                            </button>
+                            <button class="btn btn-secondary" id="btn-resume" style="display:none" disabled>
+                                <i class="bi bi-play-fill"></i> Tiếp tục
+                            </button>
+                            <button class="btn btn-danger" id="btn-stop" disabled>
+                                <i class="bi bi-stop-fill"></i> Dừng
+                            </button>
+                        </div>
+                        <div class="play-status" id="play-status">Sẵn sàng. Kết nối avatar rồi nhấn Bắt đầu — video sẽ tự ghi và hỏi tên để lưu vào thư mục đã chọn.</div>
+                    </div>
+
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="footer">
+        <p>Tạo bởi Marstaos | Tối ưu giao diện &amp; hiệu năng</p>
+    </div>
+</div>
+
+<!-- ── ElevenLabs settings card (API key + voice ID, change at runtime) ── -->
+<div class="dashboard-container">
+    <div class="card mb-3">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <span><i class="bi bi-mic"></i> ElevenLabs (giọng đọc)</span>
+            <div class="d-flex gap-1">
+                <button class="btn btn-outline-light btn-sm" id="btn-eleven-refresh" title="Tải lại">
+                    <i class="bi bi-arrow-repeat"></i>
+                </button>
+                <button class="btn btn-outline-warning btn-sm" id="btn-eleven-warm" title="Làm ấm giọng — gửi 1 câu ngắn để ElevenLabs cache sẵn, tránh treo ~12s câu đầu">
+                    <i class="bi bi-fire"></i> Warm
+                </button>
+                <button class="btn btn-primary btn-sm" id="btn-eleven-apply" title="Áp dụng ngay">
+                    <i class="bi bi-check-lg"></i> Áp dụng
+                </button>
+            </div>
+        </div>
+        <div class="card-body">
+            <div class="row g-3">
+                <div class="col-md-6">
+                    <label class="small text-muted mb-1">API key</label>
+                    <input type="password" class="form-control form-control-sm" id="eleven-key-input" placeholder="Để trống nếu không đổi" autocomplete="off">
+                    <div class="small text-muted mt-1">Hiện tại: <code id="eleven-key-hint">—</code></div>
+                </div>
+                <div class="col-md-6">
+                    <label class="small text-muted mb-1">Voice ID</label>
+                    <input type="text" class="form-control form-control-sm" id="eleven-voice-input" placeholder="VD: 21m00Tcm4TlvDq8ikWAF8" autocomplete="off">
+                    <div class="small text-muted mt-1">Model: <code id="eleven-model-hint">eleven_v3</code> (cố định) · Định dạng: <code id="eleven-fmt-hint">pcm_16000</code></div>
+                </div>
+            </div>
+            <div class="small text-danger mt-2" id="eleven-hint"></div>
+            <div class="small text-success mt-2" id="eleven-ok"></div>
+        </div>
+    </div>
+</div>
+
+<!-- ── Recordings library card (placed at bottom for visibility) ── -->
+<div class="dashboard-container">
+    <div class="card mb-3">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <span><i class="bi bi-collection-play"></i> Video đã quay</span>
+            <div class="d-flex gap-1">
+                <button class="btn btn-outline-light btn-sm" id="btn-rec-folder" title="Đổi thư mục lưu video">
+                    <i class="bi bi-folder2-open"></i> Thư mục lưu
+                </button>
+                <button class="btn btn-outline-light btn-sm" id="btn-rec-open" title="Mở thư mục trong Explorer">
+                    <i class="bi bi-box-arrow-up-right"></i>
+                </button>
+                <button class="btn btn-outline-light btn-sm" id="btn-rec-refresh" title="Làm mới danh sách">
+                    <i class="bi bi-arrow-repeat"></i>
+                </button>
+            </div>
+        </div>
+        <div class="card-body">
+            <div class="small text-muted mb-2">Thư mục lưu: <code id="rec-folder-display">—</code></div>
+            <div id="rec-list" class="script-list" style="height:220px"></div>
+        </div>
+    </div>
+</div>
+
+<!-- ── Folder setup modal ── -->
+<div class="modal fade" id="folderModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="bi bi-folder2-open"></i> Thư mục lưu video</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <input type="text" class="form-control" id="folder-input" placeholder="D:\Noble\livetalking\data\recordings">
+                <div class="small text-muted mt-2">Nhập đường dẫn tuyệt đối. Server sẽ tạo thư mục nếu chưa có và kiểm tra quyền ghi.</div>
+                <div class="small text-danger mt-1" id="folder-hint"></div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Hủy</button>
+                <button type="button" class="btn btn-primary" id="folder-confirm"><i class="bi bi-check-lg"></i> Áp dụng</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ── Delete avatars modal (one or many) ── -->
+<div class="modal fade" id="deleteAvatarsModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="bi bi-trash"></i> Xóa avatar</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <span class="small text-muted">Tick avatar cần xóa (model: <span id="delete-avatars-model">MuseTalk</span>).</span>
+                    <div class="btn-group btn-group-sm">
+                        <button type="button" class="btn btn-outline-secondary" id="delete-avatars-select-all">Chọn tất cả</button>
+                        <button type="button" class="btn btn-outline-secondary" id="delete-avatars-select-none">Bỏ chọn</button>
+                    </div>
+                </div>
+                <div id="delete-avatars-list" class="border rounded-3 p-2" style="max-height:50vh;overflow:auto">
+                    <div class="small text-muted">Đang tải danh sách avatar...</div>
+                </div>
+                <div class="small text-danger mt-2" id="delete-avatars-hint"></div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Hủy</button>
+                <button type="button" class="btn btn-danger" id="delete-avatars-confirm"><i class="bi bi-trash"></i> Xóa đã chọn (<span id="delete-avatars-count">0</span>)</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ── Recording save / name modal (shown after each take) ── -->
+<div class="modal fade" id="saveRecModal" tabindex="-1" aria-hidden="true"
+     data-bs-backdrop="static" data-bs-keyboard="false">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="bi bi-check-circle-fill text-success"></i> Đã quay xong</h5>
+            </div>
+            <div class="modal-body">
+                <p class="mb-2">Bản ghi đã sẵn sàng. Đặt tên video (để trống để lưu theo mặc định):</p>
+                <input type="text" class="form-control" id="rec-name-input" placeholder="record_YYYYMMDD_HHMMSS">
+                <div class="small text-muted mt-2" id="save-rec-hint"></div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-danger" id="save-rec-discard">
+                    <i class="bi bi-trash"></i> Hủy bản ghi
+                </button>
+                <button type="button" class="btn btn-primary" id="save-rec-confirm">
+                    <i class="bi bi-save"></i> Lưu video
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Hidden session ID written by client.js -->
+<input type="hidden" id="sessionid" value="0">
+<!-- Hidden file input -->
+<input type="file" id="file-input" accept=".txt,.docx,.pdf" style="display:none">
+
+<script src="client.js?v=20260710_sessionfix"></script>
+<script src="srs.sdk.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/mammoth@1.8.0/mammoth.browser.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js"></script>
+<script>
+$(document).ready(function () {
+
+    // ────────────────────────────────────────────────────────────────────
+    //  Connection
+    // ────────────────────────────────────────────────────────────────────
+    let isConnected = false;
+    let isConnecting = false;
+
+    function setConnectionUI(status) {
+        const ind = $('#connection-status');
+        const txt = $('#status-text');
+        ind.removeClass('status-connected status-disconnected status-connecting');
+        if (status === 'connected') {
+            ind.addClass('status-connected');
+            txt.text('Đã kết nối');
+            isConnected = true;
+            refreshPlayButton();
+        } else if (status === 'connecting') {
+            ind.addClass('status-connecting');
+            txt.text('Đang kết nối...');
+        } else {
+            ind.addClass('status-disconnected');
+            txt.text('Chưa kết nối');
+            isConnected = false;
+            refreshPlayButton();
+        }
+    }
+
+    $('#btn-connect').on('click', async function () {
+        if (isConnecting) return;
+        isConnecting = true;
+        setConnectionUI('connecting');
+        $(this).hide();
+        $('#btn-disconnect').show();
+        try { await start(); } catch (e) { console.error('connect error:', e); }
+        isConnecting = false;
+    });
+
+    $('#btn-disconnect').on('click', function () {
+        abortPlayback();
+        interruptAvatar();
+        stop();
+        $(this).hide();
+        $('#btn-connect').show();
+        setConnectionUI('disconnected');
+    });
+
+    window.onLiveTalkingSessionReady = function ()         { setConnectionUI('connected'); };
+    window.onLiveTalkingSessionStopped = function ()       { setConnectionUI('disconnected'); };
+    window.onWebRTCConnected    = window.onWebRTCConnected    || function () { setConnectionUI('connected'); };
+    window.onWebRTCDisconnected = window.onWebRTCDisconnected || function () { setConnectionUI('disconnected'); };
+
+    // ────────────────────────────────────────────────────────────────────
+    //  Avatar catalog + creation
+    // ────────────────────────────────────────────────────────────────────
+    async function loadAvatarCatalog(selectAvatarId) {
+        const select = $('#avatar-select');
+        select.prop('disabled', true);
+        try {
+            const model = window.runningModel || 'musetalk';
+            const response = await fetch('/avatars?model=' + encodeURIComponent(model));
+            const payload = await response.json();
+            const avatars = (payload && payload.data && payload.data.avatars) ? payload.data.avatars : [];
+            select.empty();
+
+            if (!avatars.length) {
+                $('<option>').val('').text('Không tìm thấy avatar ' + modelLabel(model) + ' nào').appendTo(select);
+                return;
+            }
+
+            avatars.forEach(function (item) {
+                $('<option>').val(item.avatar_id).text(item.avatar_id).appendTo(select);
+            });
+
+            const desired = selectAvatarId || select.data('last-selected') || avatars[0].avatar_id;
+            const found = avatars.some(function (item) { return item.avatar_id === desired; });
+            select.val(found ? desired : avatars[0].avatar_id);
+        } catch (err) {
+            console.error('loadAvatarCatalog error:', err);
+            select.empty().append($('<option>').val('').text('Không tải được danh sách avatar'));
+        } finally {
+            select.prop('disabled', false);
+        }
+    }
+
+    $('#btn-refresh-avatars').on('click', async function () {
+        await loadAvatarCatalog($('#avatar-select').val());
+    });
+
+    // ── Delete avatars (one or many) ──
+    let _deleteAvatarsModal = null;
+    function _deleteAvatarsUpdateCount() {
+        const n = $('#delete-avatars-list input[type="checkbox"]:checked').length;
+        $('#delete-avatars-count').text(n);
+        $('#delete-avatars-confirm').prop('disabled', n === 0);
+    }
+    async function _loadDeleteAvatarsList() {
+        const model = String(window.runningModel || 'musetalk');
+        $('#delete-avatars-model').text(modelLabel(model));
+        $('#delete-avatars-hint').text('');
+        const box = $('#delete-avatars-list').empty();
+        try {
+            const resp = await fetch('/avatars?model=' + encodeURIComponent(model));
+            const payload = await resp.json();
+            const avatars = (payload && payload.data && payload.data.avatars) ? payload.data.avatars : [];
+            if (!avatars.length) {
+                box.html('<div class="small text-muted">Không có avatar ' + modelLabel(model) + ' nào để xóa.</div>');
+                $('#delete-avatars-count').text(0);
+                $('#delete-avatars-confirm').prop('disabled', true);
+                return;
+            }
+            avatars.forEach(function (item) {
+                const id = item.avatar_id;
+                const row = $('<div class="form-check"></div>');
+                $('<input type="checkbox" class="form-check-input">').attr({ value: id, id: 'del-av-' + id }).on('change', _deleteAvatarsUpdateCount).appendTo(row);
+                $('<label class="form-check-label"></label>').attr('for', 'del-av-' + id).text(id).appendTo(row);
+                box.append(row);
+            });
+            _deleteAvatarsUpdateCount();
+        } catch (e) {
+            box.html('<div class="small text-danger">Không tải được danh sách avatar.</div>');
+        }
+    }
+    $('#btn-delete-avatars').on('click', async function () {
+        if (!_deleteAvatarsModal) _deleteAvatarsModal = new bootstrap.Modal(document.getElementById('deleteAvatarsModal'));
+        await _loadDeleteAvatarsList();
+        _deleteAvatarsModal.show();
+    });
+    $('#delete-avatars-select-all').on('click', function () {
+        $('#delete-avatars-list input[type="checkbox"]').prop('checked', true);
+        _deleteAvatarsUpdateCount();
+    });
+    $('#delete-avatars-select-none').on('click', function () {
+        $('#delete-avatars-list input[type="checkbox"]').prop('checked', false);
+        _deleteAvatarsUpdateCount();
+    });
+    $('#delete-avatars-confirm').on('click', async function () {
+        const ids = $('#delete-avatars-list input[type="checkbox"]:checked').map(function () { return $(this).val(); }).get();
+        if (!ids.length) return;
+        if (!confirm('Xóa ' + ids.length + ' avatar:\n' + ids.join(', ') + '\n\nCác session đang dùng avatar này sẽ bị đóng. Xác nhận?')) return;
+        const btn = $(this);
+        btn.prop('disabled', true).html('<span class="spinner-border spinner-border-sm"></span> Đang xóa...');
+        try {
+            const resp = await fetch('/avatars/delete', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ avatar_ids: ids })
+            });
+            const payload = await resp.json();
+            const data = (payload && payload.data) ? payload.data : { deleted: [], failed: [], dropped_sessions: [] };
+            const deleted = data.deleted || [];
+            const failed = data.failed || [];
+            const dropped = data.dropped_sessions || [];
+            // If the currently selected avatar was deleted, clear it.
+            const curSel = $('#avatar-select').val();
+            if (curSel && deleted.indexOf(curSel) >= 0) {
+                $('#avatar-select').data('last-selected', '');
+            }
+            let msg = 'Đã xóa ' + deleted.length + ' avatar.';
+            if (failed.length) msg += '\nLỗi ' + failed.length + ': ' + failed.map(function (f) { return f.avatar_id + ' (' + f.error + ')'; }).join('; ');
+            if (dropped.length) msg += '\nĐã đóng ' + dropped.length + ' session đang dùng avatar bị xóa.';
+            alert(msg);
+            await loadAvatarCatalog($('#avatar-select').val());
+            if (_deleteAvatarsModal) _deleteAvatarsModal.hide();
+        } catch (e) {
+            alert('Xóa avatar thất bại: ' + e.message);
+        } finally {
+            btn.prop('disabled', false).html('<i class="bi bi-trash"></i> Xóa đã chọn (<span id="delete-avatars-count">0</span>)');
+            _deleteAvatarsUpdateCount();
+        }
+    });
+
+    function modelLabel(m) {
+        return m === 'wav2lip' ? 'Wav2Lip' : (m === 'ultralight' ? 'Ultralight' : 'MuseTalk');
+    }
+
+    function updateCreateModelUi(model) {
+        const isWav2lip = (model === 'wav2lip');
+        $('#musetalk-params').toggle(!isWav2lip);
+        $('#wav2lip-params').toggle(isWav2lip);
+        $('#wav2lip-params2').toggle(isWav2lip);
+        $('#create-hint').text(isWav2lip
+            ? 'Video/ảnh sẽ được xử lý thành avatar Wav2Lip (face_imgs + coords.pkl).'
+            : 'Ảnh hoặc video sẽ được xử lý thành avatar MuseTalk, rồi xuất hiện trong danh sách ở trên.');
+        // Warn only when the avatar type being created can't be served by the
+        // currently running server model.
+        const mismatch = (model !== window.runningModel);
+        const warn = $('#wav2lip-warn');
+        if (mismatch) {
+            warn.show().html('Lưu ý: avatar ' + modelLabel(model) + ' chỉ dùng được khi server chạy <code>--model ' +
+                model + '</code>. Server đang chạy ' + modelLabel(window.runningModel) +
+                ' nên sẽ không xuất hiện trong danh sách trên. Dùng card “Server model” để chuyển.');
+        } else {
+            warn.hide();
+        }
+    }
+    $('#new-avatar-model').on('change', function () { updateCreateModelUi(String($(this).val())); });
+    updateCreateModelUi($('#new-avatar-model').val());
+
+    $('#btn-create-avatar').on('click', async function () {
+        const model = String($('#new-avatar-model').val() || 'musetalk');
+        const avatarId = String($('#new-avatar-id').val() || '').trim();
+        const fileInput = document.getElementById('new-avatar-file');
+        const file = fileInput && fileInput.files ? fileInput.files[0] : null;
+        if (!file) {
+            alert('Chọn một file ảnh hoặc video để tạo avatar.');
+            return;
+        }
+
+        const form = new FormData();
+        form.append('file', file);
+        if (avatarId) form.append('avatar_id', avatarId);
+
+        let endpoint, successMsg;
+        if (model === 'wav2lip') {
+            endpoint = '/avatars/create_wav2lip';
+            form.append('img_size', String($('#wav2lip-img-size').val() || '96'));
+            const pads = [
+                $('#wav2lip-pad-top').val() || 0,
+                $('#wav2lip-pad-bottom').val() || 10,
+                $('#wav2lip-pad-left').val() || 0,
+                $('#wav2lip-pad-right').val() || 0,
+            ].join(' ');
+            form.append('pads', pads);
+            form.append('face_det_batch_size', String($('#wav2lip-batch').val() || '16'));
+            form.append('nosmooth', $('#wav2lip-nosmooth').is(':checked') ? '1' : '0');
+            form.append('gpu_id', String($('#wav2lip-gpu-id').val() || '0'));
+            successMsg = 'Đã tạo avatar Wav2Lip: ';
+        } else {
+            endpoint = '/avatars/create_musetalk';
+            form.append('version', String($('#new-avatar-version').val() || 'v15'));
+            form.append('bbox_shift', String($('#new-avatar-bbox-shift').val() || '0'));
+            form.append('extra_margin', String($('#new-avatar-extra-margin').val() || '10'));
+            form.append('gpu_id', String($('#new-avatar-gpu-id').val() || '0'));
+            form.append('parsing_mode', 'jaw');
+            successMsg = 'Đã tạo avatar MuseTalk: ';
+        }
+
+        const button = $(this);
+        const originalHtml = button.html();
+        button.prop('disabled', true).html('<span class="spinner-border spinner-border-sm me-1"></span>Đang tạo...');
+        try {
+            const response = await fetch(endpoint, { method: 'POST', body: form });
+            const payload = await response.json();
+            if (!response.ok || !payload || payload.code !== 0) {
+                throw new Error((payload && payload.msg) ? payload.msg : 'Tạo avatar thất bại');
+            }
+
+            const newAvatarId = payload.data && payload.data.avatar_id ? payload.data.avatar_id : avatarId;
+            $('#new-avatar-file').val('');
+            $('#new-avatar-id').val(newAvatarId);
+            if (model === window.runningModel) {
+                // avatar type matches the running server -> select it immediately.
+                await loadAvatarCatalog(newAvatarId);
+                $('#avatar-select').data('last-selected', newAvatarId).val(newAvatarId);
+                setStatus(successMsg + newAvatarId + '. Ngắt kết nối và kết nối lại để dùng avatar này nếu session đang mở.');
+            } else {
+                // avatar type doesn't match the running server model -> refresh the
+                // list (keeps current selection) and tell the user to switch model.
+                await loadAvatarCatalog();
+                setStatus(successMsg + newAvatarId + '. Dùng card “Server model” để chuyển sang ' + modelLabel(model) + ' rồi dùng avatar này.');
+            }
+        } catch (err) {
+            console.error('create avatar error:', err);
+            alert('Không tạo được avatar: ' + err.message);
+        } finally {
+            button.prop('disabled', false).html(originalHtml);
+        }
+    });
+
+    $('#avatar-select').on('change', function () {
+        const selected = String($(this).val() || '').trim();
+        $(this).data('last-selected', selected);
+    });
+
+    // ────────────────────────────────────────────────────────────────────
+    //  Server model switch (auto-restart via the supervisor launcher)
+    // ────────────────────────────────────────────────────────────────────
+    window.runningModel = 'musetalk';
+    let modelSwitching = false;
+
+    async function loadServerInfo() {
+        try {
+            const resp = await fetch('/server/info');
+            const payload = await resp.json();
+            const data = (payload && payload.data) || {};
+            window.runningModel = data.running_model || data.config_model || 'musetalk';
+            $('#server-running-model').text('Đang chạy: ' + modelLabel(window.runningModel));
+            $('#avatar-running-model').text('(' + modelLabel(window.runningModel) + ')');
+            // The dropdown only offers musetalk/wav2lip; collapse anything else.
+            const sel = (window.runningModel === 'wav2lip') ? 'wav2lip' : 'musetalk';
+            $('#server-model').val(sel);
+            $('#new-avatar-model').val(sel);
+            updateCreateModelUi(sel);
+            refreshApplyModelButton();
+            return window.runningModel;
+        } catch (err) {
+            console.error('loadServerInfo error:', err);
+            $('#model-status').text('Không kết nối được server (/server/info).');
+            return null;
+        }
+    }
+
+    function refreshApplyModelButton() {
+        const sel = String($('#server-model').val() || 'musetalk');
+        const same = (sel === window.runningModel);
+        $('#btn-apply-model').prop('disabled', same || modelSwitching);
+        $('#model-status').text(same
+            ? 'Server đang chạy ' + modelLabel(window.runningModel) + '. Chọn model khác để chuyển.'
+            : 'Sẵn sàng chuyển sang ' + modelLabel(sel) + ' (server sẽ khởi động lại).');
+    }
+
+    $('#server-model').on('change', refreshApplyModelButton);
+
+    $('#btn-apply-model').on('click', async function () {
+        if (modelSwitching) return;
+        const target = String($('#server-model').val() || 'musetalk');
+        const button = $(this);
+        const originalHtml = button.html();
+        modelSwitching = true;
+        button.prop('disabled', true).html('<span class="spinner-border spinner-border-sm me-1"></span>Đang khởi động lại…');
+        $('#model-status').text('Đang yêu cầu server khởi động lại sang ' + modelLabel(target) + '…');
+
+        // Best-effort POST — the process may exit before the response is flushed.
+        try {
+            await fetch('/server/restart', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ model: target }),
+            });
+        } catch (_) { /* expected: the process exits (os._exit) */ }
+
+        // Poll /server/info until the relaunched server reports the target model.
+        const deadline = Date.now() + 180000;
+        let ok = false;
+        while (Date.now() < deadline) {
+            await sleep(2000);
+            let running = null;
+            try {
+                const resp = await fetch('/server/info');
+                const payload = await resp.json();
+                running = (payload && payload.data && payload.data.running_model) || null;
+            } catch (_) { running = null; }
+            if (running === target) { ok = true; break; }
+            $('#model-status').text('Đang chờ server lên lại (' + modelLabel(target) + ')…');
+        }
+        if (ok) {
+            $('#model-status').text('Server đã chuyển sang ' + modelLabel(target) + '. Tải lại trang…');
+            await sleep(500);
+            location.reload();
+        } else {
+            $('#model-status').text('Hết thời gian chờ. F5 lại trang và kiểm tra /server/info.');
+            button.prop('disabled', false).html(originalHtml);
+            modelSwitching = false;
+        }
+    });
+
+    // Init: learn the running model first, then load the matching avatar list.
+    (async function initServerAndAvatars() {
+        await loadServerInfo();
+        await loadAvatarCatalog();
+    })();
+
+    // ────────────────────────────────────────────────────────────────────
+    //  File loading
+    // ────────────────────────────────────────────────────────────────────
+    $('#btn-load-file').on('click', function () { $('#file-input').click(); });
+
+    $('#file-input').on('change', async function (e) {
+        const file = e.target.files[0];
+        if (!file) return;
+        $(this).val('');   // allow re-loading same file
+
+        const ext = file.name.split('.').pop().toLowerCase();
+        setStatus('Đang đọc ' + file.name + '…');
+
+        try {
+            let text = '';
+            if (ext === 'txt') {
+                text = await readAsText(file);
+            } else if (ext === 'docx') {
+                text = await readDocx(file);
+            } else if (ext === 'pdf') {
+                text = await readPdf(file);
+            } else {
+                setStatus('Định dạng không hỗ trợ: .' + ext);
+                return;
+            }
+            $('#script-textarea').val(text.trim());
+            setStatus('Đã load: ' + file.name + ' (' + text.trim().length + ' ký tự)');
+        } catch (err) {
+            setStatus('Lỗi đọc file: ' + err.message);
+            console.error(err);
+        }
+    });
+
+    // ── File readers ─────────────────────────────────────────────────────
+    function readAsText(file) {
+        return new Promise(function (resolve, reject) {
+            const reader = new FileReader();
+            reader.onload  = e => resolve(e.target.result);
+            reader.onerror = () => reject(new Error('Không đọc được file text'));
+            reader.readAsText(file, 'UTF-8');
+        });
+    }
+
+    function readAsArrayBuffer(file) {
+        return new Promise(function (resolve, reject) {
+            const reader = new FileReader();
+            reader.onload  = e => resolve(e.target.result);
+            reader.onerror = () => reject(new Error('Không đọc được file binary'));
+            reader.readAsArrayBuffer(file);
+        });
+    }
+
+    async function readDocx(file) {
+        if (typeof mammoth === 'undefined') throw new Error('mammoth.js chưa tải xong');
+        const buf = await readAsArrayBuffer(file);
+        const result = await mammoth.extractRawText({ arrayBuffer: buf });
+        return result.value;
+    }
+
+    async function readPdf(file) {
+        if (typeof pdfjsLib === 'undefined') throw new Error('pdf.js chưa tải xong');
+        pdfjsLib.GlobalWorkerOptions.workerSrc =
+            'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
+        const buf = await readAsArrayBuffer(file);
+        const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
+        const parts = [];
+        for (let p = 1; p <= pdf.numPages; p++) {
+            const page    = await pdf.getPage(p);
+            const content = await page.getTextContent();
+            // Join items; insert newline when y-position changes significantly
+            let lastY = null;
+            const lineBuffer = [];
+            for (const item of content.items) {
+                const y = item.transform ? item.transform[5] : null;
+                if (lastY !== null && y !== null && Math.abs(y - lastY) > 5) {
+                    parts.push(lineBuffer.join(''));
+                    lineBuffer.length = 0;
+                }
+                lineBuffer.push(item.str);
+                lastY = y;
+            }
+            if (lineBuffer.length) parts.push(lineBuffer.join(''));
+        }
+        return parts.filter(Boolean).join('\n');
+    }
+
+    // ────────────────────────────────────────────────────────────────────
+    //  Script state
+    // ────────────────────────────────────────────────────────────────────
+    let scriptLines   = [];
+    let currentIdx    = -1;   // line being spoken (-1 = not started)
+    let isPlaying     = false;
+    let isPaused      = false;
+    let abortFlag     = false;
+
+    // ────────────────────────────────────────────────────────────────────
+    //  Pronunciation cleanup: NFC + từ điển tên riêng + bỏ dòng phiên âm
+    //  (áp dụng ở "Chuẩn bị" để highlight khớp với text thực sự được đọc)
+    // ────────────────────────────────────────────────────────────────────
+    const PRON_DICT_KEY = 'lt_pron_dict';
+    const STRIP_KEY     = 'lt_strip_phonetic';
+
+    function loadPronDict() {
+        try { return JSON.parse(localStorage.getItem(PRON_DICT_KEY) || '[]'); }
+        catch { return []; }
+    }
+    function savePronDict(rules) {
+        try { localStorage.setItem(PRON_DICT_KEY, JSON.stringify(rules)); } catch {}
+    }
+    // Token có ≥2 âm tiết gạch nối (bất kỳ chữ cái nào, kể cả dấu tiếng Việt).
+    // \p{L} với flag u để khớp dấu tiếng Việt precomposed (ấ ị ờ ậ ệ đ ...).
+    const HYPH_TOK_RE = /\p{L}+(?:-\p{L}+){1,}/gu;
+    function isPhoneticGuideLine(s) {
+        // Một dòng "phiên âm" chứa nhiều token âm tiết gạch nối (chuyển tên riêng
+        // sang phiên âm tiếng Việt). Ngưỡng ≥3 để tránh khớp nhầm hợp từ hiếm.
+        const toks = s.match(HYPH_TOK_RE) || [];
+        return toks.length >= 3;
+    }
+    function cleanScript(raw) {
+        let text = (raw || '').normalize('NFC');          // 1. chuẩn hóa Unicode
+        let replaced = 0;
+        const rules = loadPronDict().slice()
+            .filter(r => r && r.from)
+            .sort((a, b) => (b.from || '').length - (a.from || '').length); // dài trước
+        for (const r of rules) {                            // 2. từ điển tên riêng
+            const re = new RegExp(r.from.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g');
+            const before = text;
+            text = text.replace(re, r.to || '');
+            if (text !== before) replaced++;
+        }
+        let dropped = 0;
+        const strip = !!document.getElementById('opt-strip-phonetic')?.checked;
+        if (strip) {                                        // 3. bỏ dòng phiên âm
+            const kept = [];
+            for (const ln of text.split(/\r?\n/)) {
+                if (ln.trim() && isPhoneticGuideLine(ln.trim())) { dropped++; continue; }
+                kept.push(ln);
+            }
+            text = kept.join('\n');
+        }
+        cleanScript.stats = { replaced, dropped };
+        return text;
+    }
+    // Khôi phục/lưu UI controls (localStorage)
+    $('#opt-strip-phonetic').prop('checked', (localStorage.getItem(STRIP_KEY) ?? '1') !== '0');
+    $('#pron-dict').val(loadPronDict().map(r => `${r.from} => ${r.to}`).join('\n'));
+    $('#opt-strip-phonetic').on('change', function () {
+        try { localStorage.setItem(STRIP_KEY, this.checked ? '1' : '0'); } catch {}
+    });
+    $('#pron-dict').on('change', function () {
+        const rs = this.value.split(/\r?\n/).map(line => {
+            const m = line.match(/^(.*?)\s*=>\s*(.*)$/);
+            return m ? { from: m[1].trim(), to: m[2] } : null;
+        }).filter(r => r && r.from);
+        savePronDict(rs);
+    });
+
+    // ────────────────────────────────────────────────────────────────────
+    //  Prepare button
+    // ────────────────────────────────────────────────────────────────────
+    $('#btn-prepare').on('click', function () {
+        const raw = $('#script-textarea').val().trim();
+        if (!raw) { alert('Vui lòng nhập hoặc load kịch bản trước.'); return; }
+        // Dọn phát âm TRƯỚC khi tách dòng: NFC + từ điển tên + bỏ dòng phiên âm.
+        // Làm ở đây (không phải trong sendLine) để danh sách highlight khớp
+        // đúng text thực sự được gửi tới ElevenLabs.
+        const cleaned = cleanScript(raw);
+        // Lines are only for the highlight list — the whole script is sent
+        // in one shot so ElevenLabs prefetch hides inter-line latency.
+        const lines = cleaned.split(/\r?\n/).map(s => s.trim()).filter(Boolean);
+        if (lines.length === 0) { alert('Sau khi dọn dẹp vẫn trống. Kiểm tra kịch bản / từ điển phát âm.'); return; }
+
+        scriptLines = lines;
+        currentIdx  = -1;
+        renderLineList();
+        updateProgress();
+
+        $('#input-section').hide();
+        $('#player-section').show();
+        refreshPlayButton();
+        const st = cleanScript.stats || { replaced: 0, dropped: 0 };
+        let msg = 'Đã chuẩn bị ' + lines.length + ' dòng.';
+        if (st.dropped)  msg += ' Đã bỏ ' + st.dropped + ' dòng phiên âm.';
+        if (st.replaced) msg += ' Áp dụng ' + st.replaced + ' quy tắc từ điển.';
+        setStatus(msg + ' Kết nối avatar rồi nhấn Bắt đầu.');
+    });
+
+    $('#btn-edit').on('click', function () {
+        if (isPlaying) abortPlayback();
+        $('#player-section').hide();
+        $('#input-section').show();
+    });
+
+    // ────────────────────────────────────────────────────────────────────
+    //  Line list rendering
+    // ────────────────────────────────────────────────────────────────────
+    function escapeHtml(s) {
+        return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    }
+
+    function renderLineList() {
+        const list = $('#script-list').empty();
+        scriptLines.forEach(function (line, idx) {
+            $('<div class="script-line">')
+                .attr('data-idx', idx)
+                .html('<span class="line-num">' + (idx + 1) + '</span>' + escapeHtml(line))
+                .on('click', function () { onLineClick(idx); })
+                .appendTo(list);
+        });
+    }
+
+    function highlightLine(idx) {
+        const items = $('#script-list .script-line');
+        items.removeClass('current');
+        items.each(function () {
+            const i = parseInt($(this).attr('data-idx'), 10);
+            if (i < idx) $(this).addClass('done');
+            else          $(this).removeClass('done');
+        });
+        if (idx < 0 || idx >= scriptLines.length) return;
+        const el = items.filter('[data-idx=' + idx + ']');
+        el.addClass('current');
+        // Scroll into centre of the list
+        const list = document.getElementById('script-list');
+        if (el[0] && list) {
+            list.scrollTop = el[0].offsetTop - list.offsetTop - list.clientHeight / 2 + el[0].clientHeight / 2;
+        }
+    }
+
+    function onLineClick(idx) {
+        if (isPlaying) return;   // disallow jump mid-play
+        currentIdx = idx;
+        highlightLine(idx);
+        updateProgress();
+        setStatus('Sẽ bắt đầu từ dòng ' + (idx + 1) + '.');
+    }
+
+    function updateProgress() {
+        const total = scriptLines.length;
+        const done  = Math.max(currentIdx + 1, 0);
+        const pct   = total > 0 ? Math.round(done / total * 100) : 0;
+        $('#progress-text').text(done + ' / ' + total + ' dòng');
+        $('#progress-fill').css('width', pct + '%');
+    }
+
+    function setStatus(msg) { $('#play-status').text(msg); }
+
+    function refreshPlayButton() {
+        const canPlay = isConnected && scriptLines.length > 0 && !isPlaying;
+        $('#btn-play').prop('disabled', !canPlay);
+    }
+
+    // ────────────────────────────────────────────────────────────────────
+    //  Playback controls
+    // ────────────────────────────────────────────────────────────────────
+    $('#btn-play').on('click', function () {
+        if (!isConnected) { alert('Vui lòng kết nối avatar trước.'); return; }
+        startPlayback();
+    });
+
+    $('#btn-pause').on('click', function () {
+        isPaused = true;
+        interruptAvatar();   // stop current speech so the clock exits; main loop waits for resume
+        $(this).hide();
+        $('#btn-resume').show().prop('disabled', false);
+        setStatus('Tạm dừng — nhấn Tiếp tục để đọc từ dòng đang sáng.');
+    });
+
+    $('#btn-resume').on('click', function () {
+        isPaused = false;
+        $(this).hide();
+        $('#btn-pause').show().prop('disabled', false);
+        setStatus('Đang đọc...');
+    });
+
+    $('#btn-stop').on('click', function () {
+        abortPlayback();
+        interruptAvatar();
+    });
+
+    async function startPlayback() {
+        isPlaying  = true;
+        isPaused   = false;
+        abortFlag  = false;
+
+        $('#btn-play').hide();
+        $('#btn-pause').show().prop('disabled', false);
+        $('#btn-resume').hide();
+        $('#btn-stop').prop('disabled', false);
+
+        // Start recording (bound to the play button). The server pipes the
+        // raw video+audio frames to ffmpeg and muxes to data/record.mp4 on
+        // stop. Each take overwrites the previous file -> rename between takes.
+        await startRecording();
+
+        // Send the whole remaining script in one POST so ElevenLabs prefetch
+        // (max_concurrency=2) hides first-byte + pipeline latency between
+        // chunks — no ~4s gap between lines. Highlight is driven by a
+        // char-clock estimate (may drift slightly; that's acceptable).
+        let startFrom = (currentIdx >= 0 && currentIdx < scriptLines.length) ? currentIdx : 0;
+
+        while (!abortFlag) {
+            await playOnce(startFrom);
+            if (abortFlag) break;
+            if (!isPaused) break;          // natural end
+            // Paused: wait for resume, then continue from the highlighted line.
+            while (isPaused && !abortFlag) await sleep(200);
+            if (abortFlag) break;
+            startFrom = currentIdx;
+        }
+
+        // Always stop recording (covers both normal finish and abort).
+        await stopRecording();
+
+        // Ask the user to name the take, then move the staged file into the
+        // configured record folder (or discard it). The server returns an
+        // error if the staging file is empty (e.g. startRecording failed), so
+        // the popup is harmless when no real take happened.
+        await promptAndSaveRecording();
+
+        if (!abortFlag) {
+            currentIdx = scriptLines.length;
+            updateProgress();
+            setStatus('Đã đọc xong kịch bản. Video đã được lưu vào thư mục.');
+            $('#script-list .script-line').addClass('done').removeClass('current');
+        }
+
+        isPlaying = false;
+        isPaused  = false;
+        $('#btn-play').show();
+        $('#btn-pause').hide();
+        $('#btn-resume').hide();
+        refreshPlayButton();
+        $('#btn-stop').prop('disabled', true);
+    }
+
+    // Send scriptLines[startFrom..] as one echo POST, then drive the highlight
+    // char-clock until speech ends, the user pauses, or playback is aborted.
+    async function playOnce(startFrom) {
+        currentIdx = startFrom;
+        highlightLine(startFrom);
+        updateProgress();
+        setStatus('Đang đọc dòng ' + (startFrom + 1) + ' / ' + scriptLines.length + '…');
+
+        const toSend = scriptLines.slice(startFrom).join('\n');
+        await sendLine(toSend);
+
+        // Vietnamese ~35 chars/sec (rough; highlight may drift — acceptable).
+        const CPS = 35;
+        // Cumulative char offset of each display line within the sent text.
+        const offsets = [];
+        let acc = 0;
+        for (let i = startFrom; i < scriptLines.length; i++) {
+            offsets.push(acc);
+            acc += scriptLines[i].length + 1;   // +1 for the '\n' join
+        }
+
+        // Wait for speech to actually start (generous timeout: cold start +
+        // first-byte ~1s + pipeline ~2.8s can approach ~5s, allow margin).
+        for (let i = 0; i < 100 && !abortFlag && !isPaused; i++) {  // up to 20s
+            if (await isSpeaking()) break;
+            await sleep(200);
+        }
+        if (abortFlag || isPaused) return;
+
+        // Drive the highlight char-clock. End ONLY on SUSTAINED silence
+        // (>= END_SILENCE_MS): self.speaking dips to false on every silence
+        // frame between sentences/chunks (base_avatar.py:981), so a single
+        // false MUST NOT end playback — otherwise the record is finalized
+        // mid-script right after the first short sentence.
+        const END_SILENCE_MS = 2000;
+        let silenceMs = 0;
+        let charOffset = 0;
+        let lastLine = startFrom;
+        while (!abortFlag && !isPaused) {
+            if (await isSpeaking()) {
+                silenceMs = 0;
+            } else {
+                silenceMs += 200;
+                if (silenceMs >= END_SILENCE_MS) break;   // whole script done
+            }
+            charOffset += CPS * 0.2;
+            let idx = startFrom;
+            for (let k = 0; k < offsets.length; k++) {
+                if (offsets[k] <= charOffset) idx = startFrom + k; else break;
+            }
+            if (idx > lastLine) {
+                currentIdx = idx;
+                highlightLine(idx);
+                updateProgress();
+                setStatus('Đọc dòng ' + (idx + 1) + ' / ' + scriptLines.length + '…');
+                lastLine = idx;
+            }
+            await sleep(200);
+        }
+    }
+
+    function abortPlayback() {
+        abortFlag  = true;
+        isPlaying  = false;
+        isPaused   = false;
+        currentIdx = -1;
+
+        $('#btn-play').show();
+        $('#btn-pause').hide();
+        $('#btn-resume').hide();
+        $('#btn-stop').prop('disabled', true);
+        $('#script-list .script-line').removeClass('current done');
+        updateProgress();
+        setStatus('Đã dừng.');
+        refreshPlayButton();
+    }
+
+    // ────────────────────────────────────────────────────────────────────
+    //  Avatar communication
+    // ────────────────────────────────────────────────────────────────────
+    function getSessionId() {
+        return String(document.getElementById('sessionid').value || '').trim();
+    }
+
+    async function sendLine(text) {
+        const sid = getSessionId();
+        await fetch('/human', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ text, type: 'echo', interrupt: false, sessionid: sid }),
+        }).catch(e => console.warn('sendLine error:', e));
+    }
+
+    async function interruptAvatar() {
+        const sid = getSessionId();
+        await fetch('/interrupt_talk', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ sessionid: sid }),
+        }).catch(() => {});
+    }
+
+    // ── Recording (bound to the play button) ──────────────────────────────
+    // POST /record start_record before the first line, end_record after the
+    // last line (or on abort). The server muxes raw video+audio frames (piped
+    // to ffmpeg in base_avatar.start_recording) into data/record.mp4. Recording
+    // adds only a per-frame stdin.write (CPU/IO), so it does NOT perturb the
+    // GPU stability fixes (heartbeat/warmup/preset ultrafast/repeat-on-underrun).
+    var isRecording = false;
+    async function startRecording() {
+        const sid = getSessionId();
+        if (!sid) return;
+        try {
+            await fetch('/record', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ sessionid: sid, type: 'start_record' }),
+            });
+            isRecording = true;
+            $('#rec-indicator').show();
+        } catch (e) { console.warn('startRecording error:', e); }
+    }
+    async function stopRecording() {
+        if (!isRecording) return;
+        const sid = getSessionId();
+        isRecording = false;
+        $('#rec-indicator').hide();
+        try {
+            await fetch('/record', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ sessionid: sid, type: 'end_record' }),
+            });
+        } catch (e) { console.warn('stopRecording error:', e); }
+    }
+
+    // ── Recording library: folder config + list + save popup ──────────────
+    function defaultRecName() {
+        const d = new Date();
+        const p = function (n) { return String(n).padStart(2, '0'); };
+        return 'record_' + d.getFullYear() + p(d.getMonth() + 1) + p(d.getDate())
+            + '_' + p(d.getHours()) + p(d.getMinutes()) + p(d.getSeconds());
+    }
+
+    function fmtSize(n) {
+        if (n >= 1e9) return (n / 1e9).toFixed(2) + ' GB';
+        if (n >= 1e6) return (n / 1e6).toFixed(1) + ' MB';
+        if (n >= 1e3) return (n / 1e3).toFixed(0) + ' KB';
+        return n + ' B';
+    }
+
+    async function loadRecordFolder() {
+        try {
+            const r = await fetch('/record/folder');
+            const p = await r.json();
+            const f = (p && p.data && p.data.folder) ? p.data.folder : '';
+            $('#rec-folder-display').text(f || '—');
+            return f;
+        } catch (e) { console.warn('loadRecordFolder error:', e); return ''; }
+    }
+
+    async function loadRecordings() {
+        const box = $('#rec-list').empty();
+        try {
+            const r = await fetch('/recordings');
+            const p = await r.json();
+            const data = (p && p.data) || {};
+            if (!data.exists || !data.recordings || !data.recordings.length) {
+                box.append('<div class="text-muted small p-3">Chưa có video nào.</div>');
+                return;
+            }
+            data.recordings.forEach(function (it) {
+                const url = '/recording/download?name=' + encodeURIComponent(it.name);
+                const safe = escapeHtml(it.name);
+                const row = $(
+                    '<div class="d-flex justify-content-between align-items-center border-bottom py-1">'
+                    + '<div class="me-2 overflow-hidden" style="min-width:0">'
+                    + '<div class="small text-truncate"><a href="' + url + '" target="_blank" download>' + safe + '</a></div>'
+                    + '<div class="small text-muted">' + fmtSize(it.size) + ' · ' + (it.mtime_iso || '') + '</div>'
+                    + '</div></div>'
+                );
+                box.append(row);
+            });
+        } catch (e) {
+            console.warn('loadRecordings error:', e);
+            box.append('<div class="text-danger small p-3">Không tải được danh sách.</div>');
+        }
+    }
+
+    $('#btn-rec-refresh').on('click', loadRecordings);
+    $('#btn-rec-open').on('click', async function () {
+        try { await fetch('/record/open_folder', { method: 'POST' }); } catch (e) { }
+    });
+
+    let folderModal = null;
+    $('#btn-rec-folder').on('click', async function () {
+        const cur = await loadRecordFolder();
+        $('#folder-input').val(cur && cur !== '—' ? cur : '');
+        $('#folder-hint').text('');
+        if (!folderModal) folderModal = new bootstrap.Modal(document.getElementById('folderModal'));
+        folderModal.show();
+    });
+    $('#folder-confirm').on('click', async function () {
+        const v = String($('#folder-input').val() || '').trim();
+        if (!v) { $('#folder-hint').text('Nhập đường dẫn thư mục.'); return; }
+        const btn = $(this); btn.prop('disabled', true);
+        try {
+            const r = await fetch('/record/folder', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ folder: v }),
+            });
+            const p = await r.json();
+            if (!r.ok || !p || p.code !== 0) throw new Error((p && p.msg) ? p.msg : 'lỗi');
+            folderModal.hide();
+            await loadRecordFolder();
+            await loadRecordings();
+        } catch (e) { $('#folder-hint').text(e.message); }
+        finally { btn.prop('disabled', false); }
+    });
+
+    // ── Save popup (shown after each take) ─────────────────────────────────
+    let saveRecModal = null;
+    let saveRecResolver = null;
+    function promptSaveRecording(defaultName) {
+        $('#rec-name-input').val(defaultName || '');
+        $('#save-rec-hint').text('Để trống → lưu theo tên mặc định (' + (defaultName || 'record_...') + ').');
+        if (!saveRecModal) saveRecModal = new bootstrap.Modal(document.getElementById('saveRecModal'));
+        return new Promise(function (resolve) { saveRecResolver = resolve; saveRecModal.show(); });
+    }
+    $('#save-rec-confirm').on('click', function () {
+        if (!saveRecResolver) return;
+        const name = String($('#rec-name-input').val() || '').trim();
+        saveRecModal.hide();
+        const r = saveRecResolver; saveRecResolver = null; r({ discard: false, name: name });
+    });
+    $('#save-rec-discard').on('click', function () {
+        if (!saveRecResolver) return;
+        saveRecModal.hide();
+        const r = saveRecResolver; saveRecResolver = null; r({ discard: true, name: '' });
+    });
+
+    async function promptAndSaveRecording() {
+        const sid = getSessionId();
+        if (!sid) return;
+        let choice = { discard: false, name: '' };
+        try { choice = await promptSaveRecording(defaultRecName()); } catch (e) { return; }
+        try {
+            const resp = await fetch('/record/save', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ sessionid: sid, name: choice.name, discard: choice.discard }),
+            });
+            const p = await resp.json();
+            if (!resp.ok || !p || p.code !== 0) {
+                setStatus('Lưu video thất bại: ' + ((p && p.msg) ? p.msg : 'lỗi'));
+                return;
+            }
+            if (choice.discard) setStatus('Đã hủy bản ghi.');
+            else setStatus('Đã lưu: ' + (p.data && p.data.name ? p.data.name : ''));
+        } catch (e) {
+            console.warn('save recording error:', e);
+            setStatus('Lưu video thất bại: ' + e.message);
+        } finally {
+            await loadRecordings();
+        }
+    }
+
+    // ── ElevenLabs settings (API key + voice ID) ───────────────────────────
+    async function loadElevenSettings() {
+        try {
+            const r = await fetch('/settings/elevenlabs');
+            const p = await r.json();
+            const d = (p && p.data) || {};
+            $('#eleven-key-hint').text(d.api_key_masked || '—');
+            $('#eleven-voice-input').val(d.voice_id || '');
+            $('#eleven-model-hint').text(d.model_id || 'eleven_v3');
+            $('#eleven-fmt-hint').text(d.output_format || 'pcm_16000');
+            $('#eleven-key-input').val('');
+            $('#eleven-hint').text('');
+            $('#eleven-ok').text('');
+        } catch (e) {
+            console.warn('loadElevenSettings error:', e);
+        }
+    }
+
+    async function applyElevenSettings() {
+        const key = String($('#eleven-key-input').val() || '').trim();
+        const voice = String($('#eleven-voice-input').val() || '').trim();
+        if (!key && !voice) {
+            $('#eleven-hint').text('Nhập API key hoặc Voice ID mới để áp dụng.');
+            return;
+        }
+        const body = {};
+        if (key) body.api_key = key;
+        if (voice) body.voice_id = voice;
+        const btn = $('#btn-eleven-apply'); btn.prop('disabled', true);
+        $('#eleven-hint').text(''); $('#eleven-ok').text('Đang áp dụng...');
+        try {
+            const r = await fetch('/settings/elevenlabs', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body),
+            });
+            const p = await r.json();
+            if (!r.ok || !p || p.code !== 0) throw new Error((p && p.msg) ? p.msg : 'lỗi');
+            const d = (p && p.data) || {};
+            $('#eleven-ok').text('Đã áp dụng (TTS sống: ' + (d.live_tts_updated ?? 0) + '). Giọng: ' + (d.voice_id || '') + '.');
+            await loadElevenSettings();
+            // Warm the ElevenLabs voice (cold/cloned voice first-byte ~12s).
+            // Throws away audio; next real stream starts fast.
+            const sid = getSessionId();
+            const warmVoice = voice || d.voice_id || '';
+            if (sid) {
+                $('#eleven-hint').text('Đang làm ấm giọng...');
+                try {
+                    const wr = await fetch('/settings/elevenlabs/warm', {
+                        method: 'POST', headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ sessionid: sid, voice_id: warmVoice }),
+                    });
+                    const wp = await wr.json();
+                    const wd = (wp && wp.data) || {};
+                    if (wr.ok && wp && wp.code === 0 && wd.ok) {
+                        $('#eleven-hint').text('Giọng đã sẵn sàng (warm ' + (wd.latency_sec ?? '?') + 's).');
+                    } else {
+                        const why = wd.error || wd.reason || (wp && wp.msg) || 'lỗi không rõ';
+                        $('#eleven-hint').text('Warm không thành công: ' + why);
+                    }
+                } catch (we) {
+                    $('#eleven-hint').text('Warm lỗi: ' + we.message);
+                }
+            } else {
+                $('#eleven-hint').text('Cần kết nối avatar (session) để tự động warm. Bấm Play rồi dừng lại rồi áp dụng lại.');
+            }
+        } catch (e) {
+            $('#eleven-ok').text('');
+            $('#eleven-hint').text('Lỗi: ' + e.message);
+        } finally {
+            btn.prop('disabled', false);
+        }
+    }
+
+    async function warmElevenVoice() {
+        const sid = getSessionId();
+        if (!sid) {
+            $('#eleven-hint').text('Cần kết nối avatar (session) mới warm được. Bấm Play rồi dừng lại để tạo session.');
+            return;
+        }
+        const voice = String($('#eleven-voice-input').val() || '').trim();
+        const btn = $('#btn-eleven-warm'); btn.prop('disabled', true);
+        $('#eleven-hint').text('Đang làm ấm giọng...'); $('#eleven-ok').text('');
+        try {
+            const r = await fetch('/settings/elevenlabs/warm', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ sessionid: sid, voice_id: voice || undefined }),
+            });
+            const p = await r.json();
+            const d = (p && p.data) || {};
+            if (r.ok && p && p.code === 0 && d.ok) {
+                $('#eleven-hint').text('');
+                $('#eleven-ok').text('Giọng đã sẵn sàng (warm ' + (d.latency_sec ?? '?') + 's, ' + (d.bytes ?? 0) + ' bytes bỏ qua).');
+            } else {
+                $('#eleven-ok').text('');
+                $('#eleven-hint').text('Warm không thành công: ' + (d.error || d.reason || (p && p.msg) || 'lỗi không rõ'));
+            }
+        } catch (e) {
+            $('#eleven-ok').text('');
+            $('#eleven-hint').text('Warm lỗi: ' + e.message);
+        } finally {
+            btn.prop('disabled', false);
+        }
+    }
+
+    $('#btn-eleven-apply').on('click', applyElevenSettings);
+    $('#btn-eleven-refresh').on('click', loadElevenSettings);
+    $('#btn-eleven-warm').on('click', warmElevenVoice);
+    $('#eleven-key-input, #eleven-voice-input').on('keydown', function (e) {
+        if (e.key === 'Enter') { e.preventDefault(); applyElevenSettings(); }
+    });
+
+    // Init the recordings library on load.
+    (async function initRecordings() {
+        await loadRecordFolder();
+        await loadRecordings();
+        await loadElevenSettings();
+    })();
+
+    async function isSpeaking() {
+        const sid = getSessionId();
+        try {
+            const resp = await fetch('/is_speaking', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ sessionid: sid }),
+            });
+            const data = await resp.json();
+            return !!data.data;
+        } catch (_) {
+            return false;
+        }
+    }
+
+    function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+    // ────────────────────────────────────────────────────────────────────
+    //  SRS WebRTC playback (mirrors dashboard.html)
+    // ────────────────────────────────────────────────────────────────────
+    var sdk = null;
+    function startPlay() {
+        if (sdk) sdk.close();
+        sdk = new SrsRtcWhipWhepAsync();
+        $('#video').prop('srcObject', sdk.stream);
+        const url = 'http://' + window.location.hostname + ':1985/rtc/v1/whep/?app=live&stream=livestream';
+        sdk.play(url)
+            .then(function (session) { console.log('WebRTC session:', session.sessionid); })
+            .catch(function (err)    { sdk.close(); console.error('WebRTC failed:', err); });
+    }
+
+});
+</script>
+</body>
+</html>
