@@ -225,7 +225,7 @@ class MuseReal(BaseAvatar):
 
         self.asr = WhisperASR(opt,self,self.audio_processor)
         self.asr.warm_up()
-        self._silence_frames = self._precompute_silence_frames()
+        self._silence_frames = []
         # Register a Whisper warmup callback for the silence-gated GPU heartbeat
         # (see base_avatar._gpu_heartbeat_loop): runs the real audio2feat path
         # on a zero buffer every few seconds while inference is idle, keeping the
@@ -292,9 +292,11 @@ class MuseReal(BaseAvatar):
 
     @torch.no_grad()
     def _precompute_silence_frames(self) -> list:
-        """Run UNet once per avatar frame with silence audio features so that
-        silence mode uses the same mask-blending as speaking mode, eliminating
-        the visible mouth-region discontinuity at speaking/silence transitions."""
+        """Legacy AI-generated silence crops.
+
+        Runtime silence should use original source frames so MuseTalk does not
+        reshape the mouth while no speech is present.
+        """
         length = len(self.input_latent_list_cycle)
         silence_feat = np.zeros((50, 384), dtype=np.float32)
         silence_batch = [silence_feat] * self.batch_size
@@ -309,9 +311,6 @@ class MuseReal(BaseAvatar):
         return frames
 
     def _get_silence_frame(self, idx: int):
-        if self._silence_frames:
-            frame = self._silence_frames[idx % len(self._silence_frames)]
-            return self.paste_back_frame(frame, idx)
         return self.frame_list_cycle[idx]
 
     def _get_tail_silence_frame(self, idx: int):

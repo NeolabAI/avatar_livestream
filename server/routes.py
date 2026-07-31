@@ -268,7 +268,7 @@ async def create_musetalk_avatar(request):
             return json_error("missing uploaded file")
 
         version = (fields.get("version") or "v15").strip() or "v15"
-        parsing_mode = (fields.get("parsing_mode") or "jaw").strip() or "jaw"
+        parsing_mode = (fields.get("parsing_mode") or "mouth").strip() or "mouth"
         bbox_shift = int(fields.get("bbox_shift") or 0)
         extra_margin = int(fields.get("extra_margin") or 10)
         gpu_id = int(fields.get("gpu_id") or getattr(request.app["opt"], "gpu_id", 0))

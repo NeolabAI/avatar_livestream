@@ -336,7 +336,7 @@ def initialize_musetalk_creator(
     gpu_id=0,
     bbox_shift=0,
     extra_margin=10,
-    parsing_mode="jaw",
+    parsing_mode="mouth",
     left_cheek_width=90,
     right_cheek_width=90,
 ):
@@ -380,7 +380,7 @@ def create_musetalk_human(
     version="v15",
     bbox_shift=0,
     extra_margin=10,
-    parsing_mode="jaw",
+    parsing_mode="mouth",
     gpu_id=0,
     left_cheek_width=90,
     right_cheek_width=90,
@@ -524,7 +524,7 @@ if __name__ == '__main__':
     parser.add_argument("--right_cheek_width", type=int, default=90, help="Width of right cheek region")
     parser.add_argument("--bbox_shift", type=int, default=0, help="Bounding box shift value")
     parser.add_argument("--extra_margin", type=int, default=10, help="Extra margin for face cropping")
-    parser.add_argument("--parsing_mode", default='jaw', help="Face blending parsing mode")
+    parser.add_argument("--parsing_mode", default='mouth', help="Face blending parsing mode")
     args = parser.parse_args()
 
     # Set computing device
