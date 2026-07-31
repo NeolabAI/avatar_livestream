@@ -328,6 +328,25 @@ def create_dir(dir_path):
         os.makedirs(dir_path)
 
 
+def smooth_mask_sequence(mask_list, window=5):
+    """Median-smooth precomputed masks to reduce frame-to-frame mouth edge jitter."""
+    if len(mask_list) < 3:
+        return mask_list
+    window = max(3, int(window))
+    if window % 2 == 0:
+        window += 1
+    radius = window // 2
+    smoothed = []
+    for i, mask in enumerate(mask_list):
+        h, w = mask.shape[:2]
+        resized = []
+        for j in range(max(0, i - radius), min(len(mask_list), i + radius + 1)):
+            resized.append(cv2.resize(mask_list[j], (256, 256), interpolation=cv2.INTER_LINEAR))
+        median = np.median(np.stack(resized, axis=0), axis=0).astype(np.uint8)
+        smoothed.append(cv2.resize(median, (w, h), interpolation=cv2.INTER_LINEAR))
+    return smoothed
+
+
 current_dir = './' #os.path.dirname(os.path.abspath(__file__))
 
 
@@ -474,6 +493,14 @@ def create_musetalk_human(
 
         mask_coords_list_cycle += [crop_box]
         mask_list_cycle.append(mask)
+
+    if parsing_mode == "mouth" and os.getenv("LIVETALKING_SMOOTH_MOUTH_MASKS", "true").lower() not in ("0", "false", "no", "off"):
+        mask_list_cycle = smooth_mask_sequence(
+            mask_list_cycle,
+            window=int(os.getenv("LIVETALKING_MOUTH_MASK_SMOOTH_WINDOW", "5")),
+        )
+        for i, mask in enumerate(mask_list_cycle):
+            cv2.imwrite(f"{mask_out_path}/{str(i).zfill(8)}.png", mask)
 
     # Remove the originally-copied source frames. For image / directory inputs
     # the source file(s) were copied into full_imgs/ with their original names

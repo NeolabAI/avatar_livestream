@@ -89,6 +89,11 @@ $env:LIVETALKING_WHISPER_WARMUP = "true"
 $env:LIVETALKING_WHISPER_WARMUP_INTERVAL_SEC = "0.5"
 $env:LIVETALKING_H264_PRESET = "ultrafast"
 $env:ELEVENLABS_SPEED = "1.0"
+$env:LIVETALKING_MOUTH_TEMPORAL_ALPHA = "0.82"
+$env:LIVETALKING_VISUAL_SPEECH_HANGOVER_SEC = "0.55"
+$env:LIVETALKING_VISUAL_TRANSITION = "true"
+$env:LIVETALKING_VISUAL_SILENCE_TO_SPEECH_SEC = "0.06"
+$env:LIVETALKING_VISUAL_SPEECH_TO_SILENCE_SEC = "0.20"
 
 # --- Native-crash diagnostics (access violation in python310.dll ~mid-script) -
 # A LONG script can segfault the embedded Python mid-lip-sync (native

@@ -95,8 +95,10 @@ class FaceParsing():
                 parsing[np.where(parsing!=255)] = 0
             elif mode == "mouth":
                 mouth_region = (np.isin(parsing, [11, 12, 13]) * 255).astype(np.uint8)
-                mouth_kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (21, 15))
+                mouth_kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (27, 19))
                 mouth_region = cv2.dilate(mouth_region, mouth_kernel, iterations=1)
+                close_kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (7, 5))
+                mouth_region = cv2.morphologyEx(mouth_region, cv2.MORPH_CLOSE, close_kernel)
                 parsing[:, :] = 0
                 parsing[mouth_region == 255] = 255
             elif mode == "jaw":

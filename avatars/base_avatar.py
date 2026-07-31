@@ -88,7 +88,18 @@ class BaseAvatar:
         self.body_index_step = max(0.05, float(os.getenv("LIVETALKING_BODY_INDEX_STEP", "1.0")))
         self.visual_speech_hangover_sec = max(
             0.0,
-            float(os.getenv("LIVETALKING_VISUAL_SPEECH_HANGOVER_SEC", "0.35")),
+            float(os.getenv("LIVETALKING_VISUAL_SPEECH_HANGOVER_SEC", "0.55")),
+        )
+        self.visual_transition_enabled = os.getenv(
+            "LIVETALKING_VISUAL_TRANSITION", "true"
+        ).lower() not in ("0", "false", "no", "off")
+        self.visual_silence_to_speech_sec = max(
+            0.0,
+            float(os.getenv("LIVETALKING_VISUAL_SILENCE_TO_SPEECH_SEC", "0.06")),
+        )
+        self.visual_speech_to_silence_sec = max(
+            0.0,
+            float(os.getenv("LIVETALKING_VISUAL_SPEECH_TO_SILENCE_SEC", "0.20")),
         )
         self.audio_gain = max(0.05, float(os.getenv("LIVETALKING_AUDIO_GAIN", "1.0")))
         self.recording = False
@@ -1122,15 +1133,14 @@ class BaseAvatar:
         return self.frame_list_cycle[idx]
 
     def process_frames(self,quit_event):
-        enable_transition = False
+        enable_transition = self.visual_transition_enabled
 
         _last_speaking = False
         _last_visual_speaking_ts = 0.0
         _last_speaking_frame = None
         _transition_start = time.time()
-        if enable_transition:
-            _transition_duration = 0.3  # 0.3s ≈ 7-8 frames at 25fps
-            _last_silent_frame = None  # 静音帧缓存
+        _transition_duration = 0.0
+        _last_silent_frame = None  # 静音帧缓存
 
         self.output.start()
         
@@ -1158,6 +1168,11 @@ class BaseAvatar:
             if current_speaking != _last_speaking:
                 logger.info(f"状态切换：{'说话' if _last_speaking else '静音'} → {'说话' if current_speaking else '静音'}")
                 _transition_start = time.time()
+                _transition_duration = (
+                    self.visual_silence_to_speech_sec
+                    if current_speaking
+                    else self.visual_speech_to_silence_sec
+                )
                 # Audio playback now comes from this same process_frames path,
                 # bundled with the inferred video frame. Do not clear
                 # res_frame_queue on speech onset: at steady state the queue can
@@ -1180,7 +1195,7 @@ class BaseAvatar:
 
                 if enable_transition:
                     # 说话→静音过渡
-                    if now_wall - _transition_start < _transition_duration and _last_speaking_frame is not None:
+                    if _transition_duration > 0 and now_wall - _transition_start < _transition_duration and _last_speaking_frame is not None:
                         alpha = min(1.0, (time.time() - _transition_start) / _transition_duration)
                         combine_frame = cv2.addWeighted(_last_speaking_frame, 1-alpha, target_frame, alpha, 0)
                     else:
@@ -1198,7 +1213,7 @@ class BaseAvatar:
                     continue
                 if enable_transition:
                     # 静音→说话过渡
-                    if time.time() - _transition_start < _transition_duration and _last_silent_frame is not None:
+                    if _transition_duration > 0 and time.time() - _transition_start < _transition_duration and _last_silent_frame is not None:
                         alpha = min(1.0, (time.time() - _transition_start) / _transition_duration)
                         combine_frame = cv2.addWeighted(_last_silent_frame, 1-alpha, current_frame, alpha, 0)
                     else:
