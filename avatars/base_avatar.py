@@ -859,6 +859,11 @@ class BaseAvatar:
     def start_recording(self):
         if self.recording:
             return
+        if self.width == 0 or self.height == 0:
+            if hasattr(self, 'frame_list_cycle') and self.frame_list_cycle:
+                self.height, self.width = self.frame_list_cycle[0].shape[:2]
+        if self.width <= 0 or self.height <= 0:
+            raise RuntimeError("recording frame size is not initialized")
         command = ['ffmpeg',
                     '-y', '-an',
                     '-f', 'rawvideo',
@@ -884,6 +889,7 @@ class BaseAvatar:
         self._record_audio_pipe = subprocess.Popen(acommand, shell=False, stdin=subprocess.PIPE)
 
         self.recording = True
+        logger.info("record started: session=%s size=%sx%s sample_rate=%s", self.opt.sessionid, self.width, self.height, self.sample_rate)
     
     def record_video_data(self, image):
         if self.width == 0:
@@ -899,10 +905,12 @@ class BaseAvatar:
         if not self.recording:
             return
         self.recording = False
-        self._record_video_pipe.stdin.close()
-        self._record_video_pipe.wait()
-        self._record_audio_pipe.stdin.close()
-        self._record_audio_pipe.wait()
+        if self._record_video_pipe and self._record_video_pipe.stdin:
+            self._record_video_pipe.stdin.close()
+            self._record_video_pipe.wait()
+        if self._record_audio_pipe and self._record_audio_pipe.stdin:
+            self._record_audio_pipe.stdin.close()
+            self._record_audio_pipe.wait()
         tmp_video = f"temp{self.opt.sessionid}.mp4"
         tmp_audio = f"temp{self.opt.sessionid}.aac"
         out_path = "data/record.mp4"

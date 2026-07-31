@@ -1235,7 +1235,12 @@ $(document).ready(function () {
         // Start recording (bound to the play button). The server pipes the
         // raw video+audio frames to ffmpeg and muxes to data/record.mp4 on
         // stop. Each take overwrites the previous file -> rename between takes.
-        await startRecording();
+        const startedRecording = await startRecording();
+        if (!startedRecording) {
+            abortPlayback();
+            setStatus('Không bắt đầu record được. Kiểm tra kết nối avatar/session.');
+            return;
+        }
 
         // Send the whole remaining script in one POST so ElevenLabs prefetch
         // (max_concurrency=2) hides first-byte + pipeline latency between
@@ -1254,18 +1259,24 @@ $(document).ready(function () {
         }
 
         // Always stop recording (covers both normal finish and abort).
-        await stopRecording();
+        const stoppedRecording = await stopRecording();
 
         // Ask the user to name the take, then move the staged file into the
         // configured record folder (or discard it). The server returns an
         // error if the staging file is empty (e.g. startRecording failed), so
         // the popup is harmless when no real take happened.
-        await promptAndSaveRecording();
+        const saveResult = stoppedRecording ? await promptAndSaveRecording() : { saved: false };
 
         if (!abortFlag) {
             currentIdx = scriptLines.length;
             updateProgress();
-            setStatus('Đã đọc xong kịch bản. Video đã được lưu vào thư mục.');
+            if (saveResult && saveResult.saved) {
+                setStatus('Đã đọc xong kịch bản. Video đã được lưu vào thư mục.');
+            } else if (saveResult && saveResult.discarded) {
+                setStatus('Đã đọc xong kịch bản. Bản ghi đã bị hủy.');
+            } else {
+                setStatus('Đã đọc xong kịch bản. Video chưa được lưu.');
+            }
             $('#script-list .script-line').addClass('done').removeClass('current');
         }
 
@@ -1389,29 +1400,49 @@ $(document).ready(function () {
     var isRecording = false;
     async function startRecording() {
         const sid = getSessionId();
-        if (!sid) return;
+        if (!sid || sid === '0') {
+            setStatus('Chưa có session avatar. Kết nối avatar trước khi record.');
+            return false;
+        }
         try {
-            await fetch('/record', {
+            const resp = await fetch('/record', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ sessionid: sid, type: 'start_record' }),
             });
+            const p = await resp.json();
+            if (!resp.ok || !p || p.code !== 0) throw new Error((p && p.msg) ? p.msg : 'start_record failed');
             isRecording = true;
             $('#rec-indicator').show();
-        } catch (e) { console.warn('startRecording error:', e); }
+            return true;
+        } catch (e) {
+            isRecording = false;
+            $('#rec-indicator').hide();
+            console.warn('startRecording error:', e);
+            setStatus('Không bắt đầu record được: ' + e.message);
+            return false;
+        }
     }
     async function stopRecording() {
-        if (!isRecording) return;
+        if (!isRecording) return false;
         const sid = getSessionId();
         isRecording = false;
         $('#rec-indicator').hide();
         try {
-            await fetch('/record', {
+            setStatus('Đang kết thúc record và mux video...');
+            const resp = await fetch('/record', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ sessionid: sid, type: 'end_record' }),
             });
-        } catch (e) { console.warn('stopRecording error:', e); }
+            const p = await resp.json();
+            if (!resp.ok || !p || p.code !== 0) throw new Error((p && p.msg) ? p.msg : 'end_record failed');
+            return true;
+        } catch (e) {
+            console.warn('stopRecording error:', e);
+            setStatus('Không kết thúc record được: ' + e.message);
+            return false;
+        }
     }
 
     // ── Recording library: folder config + list + save popup ──────────────
@@ -1521,10 +1552,11 @@ $(document).ready(function () {
 
     async function promptAndSaveRecording() {
         const sid = getSessionId();
-        if (!sid) return;
+        if (!sid || sid === '0') return { saved: false };
         let choice = { discard: false, name: '' };
-        try { choice = await promptSaveRecording(defaultRecName()); } catch (e) { return; }
+        try { choice = await promptSaveRecording(defaultRecName()); } catch (e) { return { saved: false }; }
         try {
+            setStatus(choice.discard ? 'Đang hủy bản ghi...' : 'Đang lưu video vào thư mục...');
             const resp = await fetch('/record/save', {
                 method: 'POST', headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ sessionid: sid, name: choice.name, discard: choice.discard }),
@@ -1532,13 +1564,18 @@ $(document).ready(function () {
             const p = await resp.json();
             if (!resp.ok || !p || p.code !== 0) {
                 setStatus('Lưu video thất bại: ' + ((p && p.msg) ? p.msg : 'lỗi'));
-                return;
+                return { saved: false };
             }
-            if (choice.discard) setStatus('Đã hủy bản ghi.');
-            else setStatus('Đã lưu: ' + (p.data && p.data.name ? p.data.name : ''));
+            if (choice.discard) {
+                setStatus('Đã hủy bản ghi.');
+                return { saved: false, discarded: true };
+            }
+            setStatus('Đã lưu: ' + (p.data && p.data.name ? p.data.name : ''));
+            return { saved: true, data: p.data || {} };
         } catch (e) {
             console.warn('save recording error:', e);
             setStatus('Lưu video thất bại: ' + e.message);
+            return { saved: false };
         } finally {
             await loadRecordings();
         }

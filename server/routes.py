@@ -620,9 +620,18 @@ async def record(request):
             return json_error("session not found")
         if params['type'] == 'start_record':
             avatar_session.start_recording()
+            return json_ok(data={"recording": True})
         elif params['type'] == 'end_record':
             avatar_session.stop_recording()
-        return json_ok()
+            return json_ok(data={
+                "recording": False,
+                "staging": getattr(avatar_session, "last_recording_path", None),
+                "staging_exists": bool(
+                    getattr(avatar_session, "last_recording_path", None)
+                    and os.path.exists(getattr(avatar_session, "last_recording_path", ""))
+                ),
+            })
+        return json_error("unknown record type")
     except Exception as e:
         logger.exception('record exception:')
         return json_error(str(e))
