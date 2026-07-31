@@ -42,25 +42,15 @@ class BaseASR:
         # before feature extraction; the original full-rate frames still flow to
         # the WebRTC track via output_queue.
         self.feature_sr = 16000
-        # Bound the ASR input queue with BACKPRESSURE (not drop). ElevenLabs
-        # feeds asr at >1x realtime (tts/elevenlabs.py DELIBERATELY bypasses
-        # the realtime pacer to keep inference ahead of the 25fps output ->
-        # res_frame_queue cushioned -> no "tiếng rè" buzz). On a long script
-        # this queue grew to 33k-51k frames (up to ~17 MIN of prefetch, ~200MB
-        # churn) — it drained back to 0 at end of speech, so no audio was lost,
-        # but the unbounded growth is wasteful and a memory-pressure
-        # contributor. Bounding by DROPPING would lose audio (the prefetched
-        # frames are played later -> exactly the "chưa hết kịch bản" symptom),
-        # so instead the producer is BLOCKED when the buffer is full. That
-        # throttles ElevenLabs back to ~realtime once `cap` is buffered — the
-        # same effect the bypassed pacer intended, applied at the right point —
-        # while preserving ALL audio and keeping a generous cushion so
-        # inference never starves (no buzz). Default 3000 frames = 60s of
-        # prefetch @50fps (~12MB), far above the ~1-2s cushion inference needs.
-        # Override via LIVETALKING_ASR_QUEUE_MAX; 0 = unbounded (legacy).
+        # Bound the ASR input queue with backpressure, not dropping. With
+        # realtime TTS pacing this queue is fed at one 20ms frame per 20ms, so
+        # ASR reads must tolerate normal scheduler jitter instead of
+        # synthesizing silence too aggressively.
         _asr_qmax = int(os.getenv("LIVETALKING_ASR_QUEUE_MAX", "3000"))
         self.queue:Queue[AudioFrameData] = Queue(maxsize=_asr_qmax) if _asr_qmax > 0 else Queue()
         self.output_queue:Queue[AudioFrameData] = Queue()
+        self.audio_frame_timeout_sec = float(os.getenv("LIVETALKING_ASR_AUDIO_FRAME_TIMEOUT_SEC", "0.04"))
+        self.audio_frame_speech_timeout_sec = float(os.getenv("LIVETALKING_ASR_SPEECH_FRAME_TIMEOUT_SEC", "0.12"))
 
         self.batch_size = opt.batch_size
 
@@ -97,17 +87,26 @@ class BaseASR:
             self.queue.put(item)  # legacy unbounded path
 
     #return frame:audio pcm; type: 0-normal speak, 1-silence; eventpoint:custom event sync with audio
-    def get_audio_frame(self)->AudioFrameData:        
+    def get_audio_frame(
+        self,
+        timeout: float | None = None,
+        synthesize_silence: bool = True,
+    )->AudioFrameData:
+        if timeout is None:
+            timeout = self.audio_frame_timeout_sec
         try:
             if self.parent and self.parent.custom_audiotype>1: #播放自定义音频,优先播放完自定义动作,可以通过interrupt打断动作播放
                 frame = self.parent.get_custom_audio_stream(self.parent.custom_audiotype)
                 type = self.parent.custom_audiotype
                 return AudioFrameData(data=frame, type=type, userdata={})
             else:
-                frame = self.queue.get(block=True,timeout=0.01)
+                frame = self.queue.get(block=True, timeout=timeout)
                 return frame
             #print(f'[INFO] get frame {frame.shape}')
         except queue.Empty:
+            if not synthesize_silence:
+                frame = self.queue.get(block=True)
+                return frame
             frame = np.zeros(self.chunk, dtype=np.float32)
             return AudioFrameData(data=frame, type=1, userdata={})
 

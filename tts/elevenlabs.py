@@ -574,7 +574,16 @@ class ElevenLabsTTS(BaseTTS):
         fade_pos = 0
         fade_started = False
         fade_threshold = _env_float("ELEVENLABS_FADE_IN_THRESHOLD", 10 ** (-55 / 20))
+        pending_frame = None
+        pending_eventpoint = None
         buf = b""
+
+        def queue_or_emit(frame: np.ndarray, eventpoint: dict):
+            nonlocal pending_frame, pending_eventpoint
+            if pending_frame is not None:
+                sink(pending_frame, pending_eventpoint or {})
+            pending_frame = frame
+            pending_eventpoint = eventpoint
 
         response = self._open_stream(text, voice_id, model_id)
         try:
@@ -620,7 +629,7 @@ class ElevenLabsTTS(BaseTTS):
                         eventpoint = {"status": "start", "text": text}
                         first_frame = False
                     eventpoint.update(**textevent)
-                    sink(frame, eventpoint)
+                    queue_or_emit(frame, eventpoint)
         finally:
             try:
                 response.close()
@@ -639,12 +648,17 @@ class ElevenLabsTTS(BaseTTS):
                 raw = np.frombuffer(buf, dtype=np.int16).astype(np.float32) / 32767.0
                 padded = np.zeros(self.chunk, dtype=np.float32)
                 padded[:min(len(raw), self.chunk)] = raw[:self.chunk]
-                sink(padded, {})
+                queue_or_emit(padded, {})
 
         # End-of-speech signal
         eventpoint = {"status": "end", "text": text}
         eventpoint.update(**textevent)
-        sink(np.zeros(self.chunk, dtype=np.float32), eventpoint)
+        if pending_frame is not None:
+            pending_eventpoint = dict(pending_eventpoint or {})
+            pending_eventpoint.update(eventpoint)
+            sink(pending_frame, pending_eventpoint)
+        else:
+            sink(np.zeros(self.chunk, dtype=np.float32), eventpoint)
 
         logger.info("-------elevenlabs stream total:%.4fs", time.perf_counter() - t_start)
 
@@ -710,6 +724,8 @@ class ElevenLabsTTS(BaseTTS):
 
         idx = 0
         first = True
+        last_frame = None
+        last_eventpoint = None
         while idx < stream.shape[0] and not abort_check():
             frame = stream[idx:idx + self.chunk]
             idx += self.chunk
@@ -723,11 +739,19 @@ class ElevenLabsTTS(BaseTTS):
                 eventpoint = {"status": "start", "text": text}
                 first = False
             eventpoint.update(**textevent)
-            sink(frame, eventpoint)
+            if last_frame is not None:
+                sink(last_frame, last_eventpoint or {})
+            last_frame = frame
+            last_eventpoint = eventpoint
 
         if abort_check():
             return
 
         eventpoint = {"status": "end", "text": text}
         eventpoint.update(**textevent)
-        sink(np.zeros(self.chunk, dtype=np.float32), eventpoint)
+        if last_frame is not None:
+            last_eventpoint = dict(last_eventpoint or {})
+            last_eventpoint.update(eventpoint)
+            sink(last_frame, last_eventpoint)
+        else:
+            sink(np.zeros(self.chunk, dtype=np.float32), eventpoint)

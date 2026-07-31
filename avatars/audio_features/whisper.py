@@ -20,6 +20,7 @@
 #
 
 import time
+import os
 import numpy as np
 import torch
 from torchaudio.functional import resample as ta_resample
@@ -33,6 +34,7 @@ class WhisperASR(BaseASR):
     def __init__(self, opt, parent, audio_processor:Audio2Feature):
         super().__init__(opt, parent)
         self.audio_processor = audio_processor
+        self.speech_prime_frames = max(0, int(os.getenv("LIVETALKING_ASR_SPEECH_PRIME_FRAMES", "12")))
     
     def _feature2chunks(self,feature_array,batch_size,audio_feat_win=[8,8],start=0,feature_idx_multiplier=1.0):
         """
@@ -60,8 +62,34 @@ class WhisperASR(BaseASR):
     def run_step(self):
         ############################################## extract audio feature ##############################################
         start_time = time.time()
-        for _ in range(self.batch_size*2):
-            audio_frame = self.get_audio_frame()
+        frame_count = self.batch_size * 2
+        audio_frames = []
+        speech_started = False
+
+        for _ in range(frame_count):
+            if speech_started:
+                audio_frame = self.get_audio_frame(
+                    timeout=self.audio_frame_speech_timeout_sec,
+                    synthesize_silence=False,
+                )
+            else:
+                audio_frame = self.get_audio_frame(timeout=self.audio_frame_timeout_sec)
+                if audio_frame.type == 0:
+                    speech_started = True
+                    # Prime a small cushion at the first speech onset. Without
+                    # this, the batch consumer can outrun the realtime TTS pacer
+                    # during the first ~1s and inject 20ms zero frames.
+                    deadline = time.monotonic() + self.audio_frame_speech_timeout_sec
+                    while self.queue.qsize() < self.speech_prime_frames:
+                        remaining = deadline - time.monotonic()
+                        if remaining <= 0:
+                            break
+                        time.sleep(min(0.005, remaining))
+            audio_frames.append(audio_frame)
+            if isinstance(audio_frame.userdata, dict) and audio_frame.userdata.get("status") == "end":
+                speech_started = False
+
+        for audio_frame in audio_frames[:frame_count]:
             self.frames.append(audio_frame.data)
             self.output_queue.put(audio_frame)
         
