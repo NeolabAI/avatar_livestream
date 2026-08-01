@@ -773,14 +773,30 @@ async def record_save(request):
                 record_preset = os.getenv("LIVETALKING_RECORD_X264_PRESET", "slow")
                 record_crf = os.getenv("LIVETALKING_RECORD_CRF", "16")
                 record_audio_bitrate = os.getenv("LIVETALKING_RECORD_AUDIO_BITRATE", "256k")
+                fade_sec = max(
+                    0.0,
+                    float(os.getenv("LIVETALKING_RECORD_AUDIO_FADE_IN_SEC", "0.35")),
+                )
+                audio_advance = max(
+                    0.0,
+                    float(os.getenv("LIVETALKING_RECORD_AUDIO_ADVANCE_SEC", "0.0")),
+                )
+                audio_filters = []
+                if audio_advance > 0.0:
+                    audio_filters.extend([
+                        f"atrim=start={audio_advance:.3f}",
+                        "asetpts=PTS-STARTPTS",
+                        f"apad=pad_dur={audio_advance:.3f}",
+                    ])
+                if fade_sec > 0.0:
+                    audio_filters.append(f"afade=t=in:st=0:d={fade_sec:.3f}")
+                audio_filters.append("alimiter=limit=0.92")
                 ret = subprocess.call([
                     "ffmpeg", "-y", "-fflags", "+genpts",
                     "-ss", str(trim_start), "-i", staging,
                     "-map", "0:v:0", "-map", "0:a:0",
                     "-c:v", "libx264", "-preset", record_preset, "-crf", record_crf,
-                    "-af", "afade=t=in:st=0:d={:.3f},alimiter=limit=0.92".format(
-                        max(0.0, float(os.getenv("LIVETALKING_RECORD_AUDIO_FADE_IN_SEC", "0.35")))
-                    ),
+                    "-af", ",".join(audio_filters),
                     "-c:a", "aac", "-b:a", record_audio_bitrate,
                     "-shortest", "-movflags", "+faststart",
                     "-avoid_negative_ts", "make_zero",

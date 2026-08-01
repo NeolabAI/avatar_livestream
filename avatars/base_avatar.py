@@ -1261,6 +1261,13 @@ class BaseAvatar:
                 # ahead of the mouth.
                 _fwd_t = time.perf_counter()
                 for audio_frame in audio_frames:
+                    frame = (
+                        np.clip(audio_frame.data * self.audio_gain, -1.0, 1.0) * 32767
+                    ).astype(np.int16)
+                    try:
+                        self.record_audio_data(frame)
+                    except Exception as exc:
+                        logger.warning("process_frames: direct record_audio_data dropped: %s", exc)
                     try:
                         self.audio_out_queue.put_nowait(audio_frame)
                     except queue.Full:
@@ -1394,10 +1401,6 @@ class BaseAvatar:
             except Exception as exc:
                 logger.warning("output_audio_frames: push_audio_frame dropped: %s", exc)
             self._set_telemetry_metric("push_audio_sec", time.perf_counter() - _push_audio_t)
-            try:
-                self.record_audio_data(frame)
-            except Exception as exc:
-                logger.warning("output_audio_frames: record_audio_data dropped: %s", exc)
 
             # Refill one frame to restore the cushion. A blocking get syncs to production
             # on a true stall (no buzz — audio just pauses with video, which holds its

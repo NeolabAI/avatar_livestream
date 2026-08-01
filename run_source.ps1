@@ -25,15 +25,16 @@ $env:LIVETALKING_TTS_MAX_BUFFER_SEC = "2.0"
 # ONLY the playback tap (ASR feed stays real-time). Tune: 0.4 steady, up to 0.6
 # if still ahead, down if mouth leads audio.
 $env:LIVETALKING_AUDIO_DELAY_SEC = "0.0"
-# Smooth WebRTC audio onset. 2 frames = ~40ms fixed cushion; this avoids the
-# first speech frames racing the 50fps audio sender while staying inside normal
-# lipsync tolerance.
-$env:LIVETALKING_AUDIO_JITTER_FRAMES = "2"
+# Download-quality sync test: bypass WebRTC jitter so recorded audio stays tied
+# to the two 20ms audio frames bundled with each 25fps video frame.
+$env:LIVETALKING_AUDIO_JITTER_FRAMES = "0"
 $env:LIVETALKING_AUDIO_GAIN = "0.72"
 $env:LIVETALKING_ASR_AUDIO_FRAME_TIMEOUT_SEC = "0.04"
 $env:LIVETALKING_ASR_SPEECH_FRAME_TIMEOUT_SEC = "0.12"
 $env:LIVETALKING_ASR_SPEECH_PRIME_FRAMES = "12"
 $env:LIVETALKING_AUDIO_ONSET_TRACE = "1"
+$env:LIVETALKING_AUDIO_FEAT_LEFT = "3"
+$env:LIVETALKING_AUDIO_FEAT_RIGHT = "2"
 # ASR feed cap (chunks = sec / 0.02). Was 0.5 (cap=25) but inference consumes
 # ASR in batch8 (16 per ~0.33s) while the pacer feeds at 50fps -> asr_in
 # sawtooths 11..25 and HIT the cap=25 at every peak -> pacer DROPPED ASR ->
@@ -66,7 +67,8 @@ $env:ELEVENLABS_SPEED = "1.0"
 $env:ELEVENLABS_FADE_IN_SEC = "0.12"
 $env:ELEVENLABS_FADE_IN_THRESHOLD = "0.0018"
 $env:LIVETALKING_RECORD_TRIM_PREROLL_SEC = "0.25"
-$env:LIVETALKING_RECORD_AUDIO_FADE_IN_SEC = "0.35"
+$env:LIVETALKING_RECORD_AUDIO_FADE_IN_SEC = "0.0"
+$env:LIVETALKING_RECORD_AUDIO_ADVANCE_SEC = "0.0"
 $env:LIVETALKING_RECORD_PIPE_PRESET = "ultrafast"
 $env:LIVETALKING_RECORD_PIPE_CRF = "16"
 $env:LIVETALKING_RECORD_X264_PRESET = "slow"
