@@ -6,7 +6,7 @@ $ErrorActionPreference = "Continue"
 $root = "D:\AI_avatar"
 Set-Location $root
 
-$avatarId = "fullbody_30_7_jaw"
+$avatarId = "fullbody_30_7_mouth_chin"
 
 # --- GPU selection: GPU 1 (headless card), remapped to logical cuda:0 ---
 $env:CUDA_DEVICE_ORDER = "PCI_BUS_ID"
@@ -83,6 +83,8 @@ $env:LIVETALKING_AUDIO_SPEECH_OFF_DB = "-52"
 $env:LIVETALKING_AUDIO_SPEECH_RELEASE_SEC = "0.10"
 $env:LIVETALKING_CANONICAL_MOUTH_MASK = "false"
 $env:LIVETALKING_FIXED_MOUTH_FEATHER = "true"
+$env:LIVETALKING_MOUTH_CHIN_COLOR_MATCH = "true"
+$env:LIVETALKING_SKIN_TEXTURE_STRENGTH = "0.55"
 $env:LIVETALKING_BBOX_MEDIAN_WINDOW = "5"
 $env:LIVETALKING_BBOX_SMOOTH_WINDOW = "5"
 # Download-quality mode: requires a regenerated avatar extracted at 25fps.

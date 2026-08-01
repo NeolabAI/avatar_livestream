@@ -101,6 +101,49 @@ class FaceParsing():
                 mouth_region = cv2.morphologyEx(mouth_region, cv2.MORPH_CLOSE, close_kernel)
                 parsing[:, :] = 0
                 parsing[mouth_region == 255] = 255
+            elif mode == "mouth_chin":
+                mouth_seed = (np.isin(parsing, [11, 12, 13]) * 255).astype(np.uint8)
+                mouth_kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (25, 17))
+                mouth_core = cv2.dilate(mouth_seed, mouth_kernel, iterations=1)
+                close_kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (7, 5))
+                mouth_core = cv2.morphologyEx(mouth_core, cv2.MORPH_CLOSE, close_kernel)
+
+                alpha = np.zeros_like(mouth_core, dtype=np.uint8)
+                if np.count_nonzero(mouth_core) > 0:
+                    ys, xs = np.where(mouth_core > 0)
+                    x_min, x_max = int(xs.min()), int(xs.max())
+                    y_min, y_max = int(ys.min()), int(ys.max())
+                    mouth_w = max(12, x_max - x_min + 1)
+                    mouth_h = max(8, y_max - y_min + 1)
+                    cx = int(round((x_min + x_max) * 0.5))
+
+                    perioral = cv2.dilate(
+                        mouth_core,
+                        cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (35, 25)),
+                        iterations=1,
+                    )
+                    alpha[perioral > 0] = np.maximum(alpha[perioral > 0], 190)
+
+                    chin = np.zeros_like(alpha, dtype=np.uint8)
+                    chin_center_y = int(round(y_max + mouth_h * 0.95))
+                    chin_axis_x = int(round(mouth_w * 0.62))
+                    chin_axis_y = int(round(mouth_h * 1.15))
+                    cv2.ellipse(
+                        chin,
+                        (cx, min(511, chin_center_y)),
+                        (max(18, chin_axis_x), max(12, chin_axis_y)),
+                        0,
+                        0,
+                        360,
+                        140,
+                        -1,
+                    )
+                    skin = (np.isin(parsing, [1]) * 255).astype(np.uint8)
+                    chin = cv2.bitwise_and(chin, skin)
+                    alpha = np.maximum(alpha, chin)
+                    alpha[mouth_core > 0] = 255
+
+                parsing[:, :] = alpha
             elif mode == "jaw":
                 face_region = np.isin(parsing, [1])*255
                 face_region = face_region.astype(np.uint8)

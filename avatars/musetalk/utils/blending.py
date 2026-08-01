@@ -168,7 +168,7 @@ def get_image_prepare_material(image, face_box, upper_boundary_ratio=0.5, expand
     face_large = body.crop(crop_box)
     ori_shape = face_large.size
 
-    if mode in ("mouth", "jaw") and _env_bool("LIVETALKING_CANONICAL_MOUTH_MASK", False):
+    if mode in ("mouth", "jaw", "mouth_chin") and _env_bool("LIVETALKING_CANONICAL_MOUTH_MASK", False):
         mask_array = _canonical_mouth_mask(ori_shape, face_box, crop_box)
     else:
         mask_image = face_seg(face_large, mode=mode, fp=fp)
