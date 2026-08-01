@@ -770,15 +770,18 @@ async def record_save(request):
                 # the first video packet at a positive timestamp/keyframe (seen as
                 # video start_time ~6s), which makes saved recordings play audio
                 # before video and feel like overlapping speech.
+                record_preset = os.getenv("LIVETALKING_RECORD_X264_PRESET", "slow")
+                record_crf = os.getenv("LIVETALKING_RECORD_CRF", "16")
+                record_audio_bitrate = os.getenv("LIVETALKING_RECORD_AUDIO_BITRATE", "256k")
                 ret = subprocess.call([
                     "ffmpeg", "-y", "-fflags", "+genpts",
                     "-ss", str(trim_start), "-i", staging,
                     "-map", "0:v:0", "-map", "0:a:0",
-                    "-c:v", "libx264", "-preset", "ultrafast", "-crf", "18",
+                    "-c:v", "libx264", "-preset", record_preset, "-crf", record_crf,
                     "-af", "afade=t=in:st=0:d={:.3f},alimiter=limit=0.92".format(
                         max(0.0, float(os.getenv("LIVETALKING_RECORD_AUDIO_FADE_IN_SEC", "0.35")))
                     ),
-                    "-c:a", "aac", "-b:a", "192k",
+                    "-c:a", "aac", "-b:a", record_audio_bitrate,
                     "-shortest", "-movflags", "+faststart",
                     "-avoid_negative_ts", "make_zero",
                     tmp_trimmed,

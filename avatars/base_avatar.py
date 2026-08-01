@@ -864,6 +864,9 @@ class BaseAvatar:
                 self.height, self.width = self.frame_list_cycle[0].shape[:2]
         if self.width <= 0 or self.height <= 0:
             raise RuntimeError("recording frame size is not initialized")
+        record_pipe_preset = os.getenv("LIVETALKING_RECORD_PIPE_PRESET", "ultrafast")
+        record_pipe_crf = os.getenv("LIVETALKING_RECORD_PIPE_CRF", "16")
+        record_audio_bitrate = os.getenv("LIVETALKING_RECORD_AUDIO_BITRATE", "256k")
         command = ['ffmpeg',
                     '-y', '-an',
                     '-f', 'rawvideo',
@@ -873,7 +876,9 @@ class BaseAvatar:
                     '-r', str(25),
                     '-i', '-',
                     '-pix_fmt', 'yuv420p', 
-                    '-vcodec', "h264",
+                    '-vcodec', "libx264",
+                    '-preset', record_pipe_preset,
+                    '-crf', record_pipe_crf,
                     f'temp{self.opt.sessionid}.mp4']
         self._record_video_pipe = subprocess.Popen(command, shell=False, stdin=subprocess.PIPE)
 
@@ -884,7 +889,7 @@ class BaseAvatar:
                     '-ar', str(self.sample_rate),
                     '-i', '-',
                     '-acodec', 'aac',
-                    '-b:a', '192k',
+                    '-b:a', record_audio_bitrate,
                     f'temp{self.opt.sessionid}.aac']
         self._record_audio_pipe = subprocess.Popen(acommand, shell=False, stdin=subprocess.PIPE)
 

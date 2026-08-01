@@ -36,13 +36,11 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 def video2imgs(vid_path, save_path, ext='.png', cut_frame=10000000, max_frames=0, output_fps=25):
     """Extract frames from `vid_path` into `save_path` as 00000000.png, ...
 
-    Samples evenly-spaced frames so the avatar's reference-frame loop plays at
+    Samples frames by timestamp so the avatar's reference-frame loop plays at
     the SOURCE video's real-time speed. The avatar outputs at a fixed
-    `output_fps` (25 — config requires `--fps 25`), so one reference loop lasts
+    `output_fps` (25 - config requires `--fps 25`), so one reference loop lasts
     N/output_fps seconds. To match the source duration we want
-    N ~= duration * output_fps = (total/src_fps) * output_fps frames, i.e.
-    stride ~= src_fps / output_fps. A 60fps source -> stride 3 (~real-time at
-    25fps output); a 25fps source -> stride 1 (already real-time).
+    N ~= duration * output_fps = (total/src_fps) * output_fps frames.
 
     `max_frames` is a HARD ceiling: if the source is so long that real-time
     sampling would exceed it, sample sparser (faster-than-realtime motion)
@@ -60,55 +58,54 @@ def video2imgs(vid_path, save_path, ext='.png', cut_frame=10000000, max_frames=0
     total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
     src_fps = cap.get(cv2.CAP_PROP_FPS) or 0.0
     src_fps = float(src_fps) if (src_fps and src_fps > 0) else 0.0
+    output_fps = float(output_fps) if output_fps else 25.0
 
-    # Real-time target: frames needed so N/output_fps == source duration.
+    source_limit = total
+    if total > 0 and cut_frame is not None:
+        source_limit = min(total, int(cut_frame) + 1)
+
     target = 0
-    if src_fps > 0 and total > 0:
-        duration = total / src_fps
+    if src_fps > 0 and source_limit > 0:
+        duration = source_limit / src_fps
         target = max(1, int(round(duration * output_fps)))
 
-    # cap_target = hard max number of frames to write this run.
+    cap_target = target
     if max_frames and max_frames > 0:
         cap_target = min(target, max_frames) if target > 0 else max_frames
-    else:
-        cap_target = target  # 0 -> unlimited (legacy all-frames)
 
-    # Even spacing to land on ~cap_target frames. round-half-up (not ceil):
-    # ceil over-strides and loses ~20% of frames, leaving the loop ~1.25x fast
-    # even when the cap allows real-time. round-half-up packs ~cap_target frames
-    # so the loop duration matches the source when cap >= target; when cap <
-    # target (cap-bound) it behaves like the old ceil (within +/-1). If total is
-    # 0 (some HEVC containers misreport frame count) stride stays 1 and the
-    # written-cap hard-stop below still bounds the output.
-    stride = 1
-    if cap_target > 0 and total > cap_target:
-        stride = max(1, int(total / cap_target + 0.5))
-
-    src_dur = (total / src_fps) if (src_fps > 0 and total > 0) else 0.0
+    src_dur = (source_limit / src_fps) if (src_fps > 0 and source_limit > 0) else 0.0
     print(
-        f"video2imgs: src total={total} fps={src_fps or 'n/a'} dur={src_dur:.1f}s "
-        f"-> realtime_target={target or 'n/a'} cap={cap_target or 'unlimited'} "
-        f"stride={stride}"
+        f"video2imgs: src total={total} usable={source_limit or 'n/a'} fps={src_fps or 'n/a'} "
+        f"dur={src_dur:.1f}s -> realtime_target={target or 'n/a'} "
+        f"cap={cap_target or 'unlimited'} sampling=timestamp"
     )
 
-    count = 0
     written = 0
-    while True:
-        ret, frame = cap.read()
-        if not ret:
-            break
-        if count > cut_frame:
-            break
-        if count % stride == 0:
-            # Stop once we have enough frames. Covers the HEVC case where
-            # total misreported as 0 -> stride stayed 1 -> without this a
-            # 4084-frame stream would still write every frame.
-            if cap_target > 0 and written >= cap_target:
+    ext_name = ext.lstrip(".")
+    if source_limit > 0 and cap_target > 0:
+        source_indices = np.linspace(0, source_limit - 1, cap_target).round().astype(np.int64)
+        for source_index in source_indices:
+            cap.set(cv2.CAP_PROP_POS_FRAMES, int(source_index))
+            ret, frame = cap.read()
+            if not ret:
+                continue
+            cv2.putText(frame, "LiveTalking", (10, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.3, (128,128,128), 1)
+            cv2.imwrite(os.path.join(save_path, f"{written:08d}.{ext_name}"), frame)
+            written += 1
+    else:
+        count = 0
+        while True:
+            ret, frame = cap.read()
+            if not ret:
+                break
+            if count > cut_frame:
+                break
+            if max_frames and max_frames > 0 and written >= max_frames:
                 break
             cv2.putText(frame, "LiveTalking", (10, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.3, (128,128,128), 1)
-            cv2.imwrite(f"{save_path}/{written:08d}.png", frame)
+            cv2.imwrite(os.path.join(save_path, f"{written:08d}.{ext_name}"), frame)
             written += 1
-        count += 1
+            count += 1
     cap.release()
     print(f"video2imgs: wrote {written} frames")
     return written
@@ -437,12 +434,12 @@ def create_musetalk_human(
 
     if os.path.isfile(file):
         if is_video_file(file):
-            # Cap the extracted frame count so a long/high-fps source does not
-            # become a multi-thousand-frame avatar (creation ~20-30min, killed
-            # mid-save -> broken avatar). See video2imgs docstring. Default 600
-            # (~24s pose loop at 25fps) — more pose variety than 300 with a
-            # still-reasonable ~4-5min creation. Override via the env var.
-            max_frames = int(os.getenv("LIVETALKING_AVATAR_MAX_FRAMES", "600"))
+            # Default to the full real-time 25fps reference loop. Capping this
+            # too low makes 30fps source videos fall to ~15fps motion after
+            # integer stride extraction, then runtime has to repeat body frames.
+            # Set LIVETALKING_AVATAR_MAX_FRAMES only when intentionally trading
+            # motion smoothness for faster avatar creation.
+            max_frames = int(os.getenv("LIVETALKING_AVATAR_MAX_FRAMES", "0"))
             output_fps = int(os.getenv("LIVETALKING_AVATAR_OUTPUT_FPS", "25"))
             written = video2imgs(file, save_full_path, ext='png',
                                  max_frames=max_frames, output_fps=output_fps)

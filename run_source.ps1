@@ -6,7 +6,7 @@ $ErrorActionPreference = "Continue"
 $root = "D:\AI_avatar"
 Set-Location $root
 
-$avatarId = "fullbody_30_7"
+$avatarId = "fullbody_30_7_25fps"
 
 # --- GPU selection: GPU 1 (headless card), remapped to logical cuda:0 ---
 $env:CUDA_DEVICE_ORDER = "PCI_BUS_ID"
@@ -61,19 +61,23 @@ $env:LIVETALKING_UNET_WARMUP = "true"
 $env:LIVETALKING_WHISPER_WARMUP_INTERVAL_SEC = "0.5"
 $env:LIVETALKING_UNET_WARMUP_INTERVAL_SEC = "1.0"
 $env:LIVETALKING_H264_PRESET = "ultrafast"
+$env:LIVETALKING_COMPOSITE_MAX_DIM = "3840"
 $env:ELEVENLABS_SPEED = "1.0"
 $env:ELEVENLABS_FADE_IN_SEC = "0.12"
 $env:ELEVENLABS_FADE_IN_THRESHOLD = "0.0018"
 $env:LIVETALKING_RECORD_TRIM_PREROLL_SEC = "0.25"
 $env:LIVETALKING_RECORD_AUDIO_FADE_IN_SEC = "0.35"
-# Body frame advance per output frame. fullbody_30_7: 459 full_imgs from
-# Closeup.mp4 (~32.45s), so natural body motion is ~14.15fps. At 25fps output
-# that is step ~= 14.15/25 = 0.56. Higher values make the avatar body move
-# faster than the source.
-$env:LIVETALKING_BODY_INDEX_STEP = "0.56"
-$env:LIVETALKING_MOUTH_TEMPORAL_ALPHA = "0.82"
+$env:LIVETALKING_RECORD_PIPE_PRESET = "ultrafast"
+$env:LIVETALKING_RECORD_PIPE_CRF = "16"
+$env:LIVETALKING_RECORD_X264_PRESET = "slow"
+$env:LIVETALKING_RECORD_CRF = "16"
+$env:LIVETALKING_RECORD_AUDIO_BITRATE = "256k"
+$env:LIVETALKING_AVATAR_MAX_FRAMES = "0"
+# Download-quality mode: requires a regenerated avatar extracted at 25fps.
+$env:LIVETALKING_BODY_INDEX_STEP = "1.0"
+$env:LIVETALKING_MOUTH_TEMPORAL_ALPHA = "1.0"
 $env:LIVETALKING_VISUAL_SPEECH_HANGOVER_SEC = "0.55"
-$env:LIVETALKING_VISUAL_TRANSITION = "true"
+$env:LIVETALKING_VISUAL_TRANSITION = "false"
 $env:LIVETALKING_VISUAL_SILENCE_TO_SPEECH_SEC = "0.06"
 $env:LIVETALKING_VISUAL_SPEECH_TO_SILENCE_SEC = "0.20"
 $env:PYTHONFAULTHANDLER = "1"
