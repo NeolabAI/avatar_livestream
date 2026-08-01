@@ -344,6 +344,78 @@ def smooth_mask_sequence(mask_list, window=5):
     return smoothed
 
 
+def _env_bool(name, default):
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return value.strip().lower() not in ("0", "false", "no", "off")
+
+
+def _median_filter(values, window):
+    window = max(1, int(window))
+    if window % 2 == 0:
+        window += 1
+    radius = window // 2
+    padded = np.pad(values, (radius, radius), mode="edge")
+    return np.array([np.median(padded[i:i + window]) for i in range(len(values))], dtype=np.float32)
+
+
+def _savgol_filter(values, window):
+    window = int(window)
+    if window <= 1:
+        return values.astype(np.float32)
+    if window % 2 == 0:
+        window += 1
+    if window == 5:
+        weights = np.array([-3, 12, 17, 12, -3], dtype=np.float32) / 35.0
+    elif window == 7:
+        weights = np.array([-2, 3, 6, 7, 6, 3, -2], dtype=np.float32) / 21.0
+    else:
+        window = 9
+        weights = np.array([-21, 14, 39, 54, 59, 54, 39, 14, -21], dtype=np.float32) / 231.0
+    radius = window // 2
+    padded = np.pad(values, (radius, radius), mode="edge")
+    return np.array([float(np.sum(padded[i:i + window] * weights)) for i in range(len(values))], dtype=np.float32)
+
+
+def stabilize_bbox_sequence(coord_list, frame_list, median_window=5, smooth_window=9):
+    valid = [
+        i for i, bbox in enumerate(coord_list)
+        if bbox != (0.0, 0.0, 0.0, 0.0) and bbox != [0.0, 0.0, 0.0, 0.0]
+    ]
+    if len(valid) < 3:
+        return coord_list
+
+    arr = np.array([coord_list[i] for i in valid], dtype=np.float32)
+    cx = (arr[:, 0] + arr[:, 2]) * 0.5
+    cy = (arr[:, 1] + arr[:, 3]) * 0.5
+    ww = arr[:, 2] - arr[:, 0]
+    hh = arr[:, 3] - arr[:, 1]
+
+    smoothed = []
+    for values in (cx, cy, ww, hh):
+        values = _median_filter(values, median_window)
+        values = _savgol_filter(values, smooth_window)
+        smoothed.append(values)
+
+    result = [list(b) if not isinstance(b, tuple) else b for b in coord_list]
+    for pos, i in enumerate(valid):
+        frame_h, frame_w = frame_list[i].shape[:2]
+        ncx, ncy, nw, nh = [float(v[pos]) for v in smoothed]
+        nw = max(32.0, min(float(frame_w), nw))
+        nh = max(32.0, min(float(frame_h), nh))
+        x1 = int(round(ncx - nw * 0.5))
+        y1 = int(round(ncy - nh * 0.5))
+        x2 = int(round(ncx + nw * 0.5))
+        y2 = int(round(ncy + nh * 0.5))
+        x1 = max(0, min(frame_w - 2, x1))
+        y1 = max(0, min(frame_h - 2, y1))
+        x2 = max(x1 + 2, min(frame_w, x2))
+        y2 = max(y1 + 2, min(frame_h, y2))
+        result[i] = [x1, y1, x2, y2]
+    return result
+
+
 current_dir = './' #os.path.dirname(os.path.abspath(__file__))
 
 
@@ -454,19 +526,30 @@ def create_musetalk_human(
     input_img_list = sorted(glob.glob(os.path.join(save_full_path, '*.[jpJP][pnPN]*[gG]')))
     print("extracting landmarks...")
     coord_list, frame_list = get_landmark_and_bbox(input_img_list, bbox_shift)
+    coord_placeholder = (0.0, 0.0, 0.0, 0.0)
+    if version == "v15":
+        for idx, bbox in enumerate(coord_list):
+            if bbox == coord_placeholder:
+                continue
+            x1, y1, x2, y2 = bbox
+            y2 = min(y2 + extra_margin, frame_list[idx].shape[0])
+            coord_list[idx] = [x1, y1, x2, y2]
+    if _env_bool("LIVETALKING_STABILIZE_AVATAR_BBOX", True):
+        coord_list = stabilize_bbox_sequence(
+            coord_list,
+            frame_list,
+            median_window=int(os.getenv("LIVETALKING_BBOX_MEDIAN_WINDOW", "5")),
+            smooth_window=int(os.getenv("LIVETALKING_BBOX_SMOOTH_WINDOW", "9")),
+        )
+        print("stabilized avatar bbox sequence")
     input_latent_list = []
     idx = -1
     # maker if the bbox is not sufficient
-    coord_placeholder = (0.0, 0.0, 0.0, 0.0)
     for bbox, frame in zip(coord_list, frame_list):
         idx = idx + 1
         if bbox == coord_placeholder:
             continue
         x1, y1, x2, y2 = bbox
-        if version == "v15":
-            y2 = y2 + extra_margin
-            y2 = min(y2, frame.shape[0])
-            coord_list[idx] = [x1, y1, x2, y2]  # 更新coord_list中的bbox
         crop_frame = frame[y1:y2, x1:x2]
         resized_crop_frame = cv2.resize(crop_frame, (img_size, img_size), interpolation=cv2.INTER_LANCZOS4)
         latents = vae.get_latents_for_unet(resized_crop_frame)
@@ -491,7 +574,7 @@ def create_musetalk_human(
         mask_coords_list_cycle += [crop_box]
         mask_list_cycle.append(mask)
 
-    if parsing_mode == "mouth" and os.getenv("LIVETALKING_SMOOTH_MOUTH_MASKS", "true").lower() not in ("0", "false", "no", "off"):
+    if parsing_mode == "mouth" and os.getenv("LIVETALKING_SMOOTH_MOUTH_MASKS", "false").lower() not in ("0", "false", "no", "off"):
         mask_list_cycle = smooth_mask_sequence(
             mask_list_cycle,
             window=int(os.getenv("LIVETALKING_MOUTH_MASK_SMOOTH_WINDOW", "5")),

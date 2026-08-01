@@ -6,7 +6,7 @@ $ErrorActionPreference = "Continue"
 $root = "D:\AI_avatar"
 Set-Location $root
 
-$avatarId = "fullbody_30_7_25fps"
+$avatarId = "fullbody_30_7_stable"
 
 # --- GPU selection: GPU 1 (headless card), remapped to logical cuda:0 ---
 $env:CUDA_DEVICE_ORDER = "PCI_BUS_ID"
@@ -73,10 +73,13 @@ $env:LIVETALKING_RECORD_X264_PRESET = "slow"
 $env:LIVETALKING_RECORD_CRF = "16"
 $env:LIVETALKING_RECORD_AUDIO_BITRATE = "256k"
 $env:LIVETALKING_AVATAR_MAX_FRAMES = "0"
+$env:LIVETALKING_STABILIZE_AVATAR_BBOX = "true"
+$env:LIVETALKING_CANONICAL_MOUTH_MASK = "true"
+$env:LIVETALKING_FIXED_MOUTH_FEATHER = "true"
 # Download-quality mode: requires a regenerated avatar extracted at 25fps.
 $env:LIVETALKING_BODY_INDEX_STEP = "1.0"
 $env:LIVETALKING_MOUTH_TEMPORAL_ALPHA = "1.0"
-$env:LIVETALKING_VISUAL_SPEECH_HANGOVER_SEC = "0.55"
+$env:LIVETALKING_VISUAL_SPEECH_HANGOVER_SEC = "0.0"
 $env:LIVETALKING_VISUAL_TRANSITION = "false"
 $env:LIVETALKING_VISUAL_SILENCE_TO_SPEECH_SEC = "0.06"
 $env:LIVETALKING_VISUAL_SPEECH_TO_SILENCE_SEC = "0.20"
