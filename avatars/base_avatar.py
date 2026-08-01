@@ -116,6 +116,14 @@ class BaseAvatar:
         )
         self._audio_energy_voice_active = False
         self._audio_energy_release_count = 0
+        self.mouth_onset_attack_frames = max(
+            1,
+            int(os.getenv("LIVETALKING_MOUTH_ONSET_ATTACK_FRAMES", "3")),
+        )
+        self.mouth_onset_first_mix = max(
+            0.0,
+            min(1.0, float(os.getenv("LIVETALKING_MOUTH_ONSET_FIRST_MIX", "0.70"))),
+        )
         self.audio_gain = max(0.05, float(os.getenv("LIVETALKING_AUDIO_GAIN", "1.0")))
         self.recording = False
         self._record_video_pipe = None
@@ -1193,6 +1201,8 @@ class BaseAvatar:
         _transition_start = time.time()
         _transition_duration = 0.0
         _last_silent_frame = None  # 静音帧缓存
+        _last_has_generated = False
+        _mouth_attack_index = 0
 
         self.output.start()
         
@@ -1207,6 +1217,7 @@ class BaseAvatar:
             _loop_start = time.perf_counter()
             # 检测状态变化
             raw_speaking = not (audio_frames[0].type!=0 and audio_frames[1].type!=0)
+            has_generated = res_frame is not None
             now_wall = time.time()
             if raw_speaking:
                 _last_visual_speaking_ts = now_wall
@@ -1232,8 +1243,22 @@ class BaseAvatar:
                 # words/audio while the TTS pacer continues feeding ASR.
             _last_speaking = current_speaking
 
-            if not raw_speaking: #全为静音数据，只需要取fullimg
-                self.speaking = False
+            onset_mix = 1.0
+            if has_generated:
+                if not _last_has_generated:
+                    _mouth_attack_index = 0
+                attack_frames = self.mouth_onset_attack_frames
+                if attack_frames > 1:
+                    progress = min(1.0, _mouth_attack_index / float(attack_frames - 1))
+                    eased = 1.0 - (1.0 - progress) ** 2
+                    onset_mix = self.mouth_onset_first_mix + (1.0 - self.mouth_onset_first_mix) * eased
+                _mouth_attack_index += 1
+            else:
+                _mouth_attack_index = 0
+            _last_has_generated = has_generated
+
+            if not has_generated:
+                self.speaking = current_speaking
                 audiotype = audio_frames[0].type
                 if current_speaking and _last_speaking_frame is not None:
                     target_frame = _last_speaking_frame.copy()
@@ -1259,7 +1284,7 @@ class BaseAvatar:
             else:
                 self.speaking = True
                 try:
-                    current_frame = self.paste_back_frame(res_frame,idx)
+                    current_frame = self.paste_back_frame(res_frame, idx, onset_mix=onset_mix)
                 except Exception as e:
                     logger.warning(f"paste_back_frame error: {e}")
                     continue

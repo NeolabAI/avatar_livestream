@@ -381,7 +381,7 @@ class MuseReal(BaseAvatar):
             pass
         return pred
 
-    def paste_back_frame(self,pred_frame,idx:int):
+    def paste_back_frame(self, pred_frame, idx: int, onset_mix: float = 1.0):
         bbox = self.coord_list_cycle[idx]
         # NOTE: this MUST be a C-level ndarray .copy(), NOT copy.deepcopy(). The
         # full 4K BGR frame is ~25MB. copy.deepcopy() traverses the generic Python
@@ -433,6 +433,11 @@ class MuseReal(BaseAvatar):
             self._previous_pred_frame = pred_u8.copy()
 
             res_frame = cv2.resize(pred_u8, (w, h), interpolation=cv2.INTER_LINEAR)
+            onset_mix = float(np.clip(onset_mix, 0.0, 1.0))
+            if onset_mix < 0.999:
+                source_face = ori_frame[y1:y2, x1:x2]
+                if source_face.shape == res_frame.shape:
+                    res_frame = cv2.addWeighted(res_frame, onset_mix, source_face, 1.0 - onset_mix, 0)
             mask = self.mask_list_cycle[idx]
             mask_crop_box = self.mask_coords_list_cycle[idx]
             combine_frame = get_image_blending(ori_frame,res_frame,(x1,y1,x2,y2),mask,mask_crop_box)
