@@ -35,8 +35,8 @@ class WhisperASR(BaseASR):
         super().__init__(opt, parent)
         self.audio_processor = audio_processor
         self.speech_prime_frames = max(0, int(os.getenv("LIVETALKING_ASR_SPEECH_PRIME_FRAMES", "12")))
-        self.audio_feat_left = max(0, int(os.getenv("LIVETALKING_AUDIO_FEAT_LEFT", "3")))
-        self.audio_feat_right = max(0, int(os.getenv("LIVETALKING_AUDIO_FEAT_RIGHT", "2")))
+        self.audio_feat_left = max(0, int(os.getenv("LIVETALKING_AUDIO_FEAT_LEFT", "2")))
+        self.audio_feat_right = max(0, int(os.getenv("LIVETALKING_AUDIO_FEAT_RIGHT", "3")))
     
     def _feature2chunks(self,feature_array,batch_size,audio_feat_win=[8,8],start=0,feature_idx_multiplier=1.0):
         """

@@ -65,8 +65,8 @@ class BaseASR:
     def flush_talk(self):
         self.queue.queue.clear()
 
-    def put_audio_frame(self,audio_chunk:NDArray[np.float32],datainfo:dict): #16khz 20ms pcm
-        item = AudioFrameData(data=audio_chunk, type=0, userdata=datainfo)
+    def put_audio_frame(self,audio_chunk:NDArray[np.float32],datainfo:dict, frame_type:int=0): #16khz 20ms pcm
+        item = AudioFrameData(data=audio_chunk, type=frame_type, userdata=datainfo)
         if self.queue.maxsize:  # bounded: BACKPRESSURE (block producer) — no audio dropped
             # Block until a slot frees (inference consumes at ~realtime 50fps).
             # This throttles ElevenLabs to ~realtime once the buffer is full —

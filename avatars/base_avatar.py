@@ -101,6 +101,21 @@ class BaseAvatar:
             0.0,
             float(os.getenv("LIVETALKING_VISUAL_SPEECH_TO_SILENCE_SEC", "0.20")),
         )
+        self.audio_energy_gate_enabled = os.getenv(
+            "LIVETALKING_AUDIO_ENERGY_GATE", "true"
+        ).lower() not in ("0", "false", "no", "off")
+        self.audio_speech_on_threshold = 10 ** (
+            float(os.getenv("LIVETALKING_AUDIO_SPEECH_ON_DB", "-45")) / 20.0
+        )
+        self.audio_speech_off_threshold = 10 ** (
+            float(os.getenv("LIVETALKING_AUDIO_SPEECH_OFF_DB", "-52")) / 20.0
+        )
+        self.audio_speech_release_frames = max(
+            0,
+            int(round(float(os.getenv("LIVETALKING_AUDIO_SPEECH_RELEASE_SEC", "0.10")) * opt.fps * 2)),
+        )
+        self._audio_energy_voice_active = False
+        self._audio_energy_release_count = 0
         self.audio_gain = max(0.05, float(os.getenv("LIVETALKING_AUDIO_GAIN", "1.0")))
         self.recording = False
         self._record_video_pipe = None
@@ -749,7 +764,31 @@ class BaseAvatar:
     
     def put_audio_frame(self, audio_chunk:NDArray[np.float32], datainfo:dict={}): # 16khz 20ms pcm
         if hasattr(self, 'asr'):
-            self.asr.put_audio_frame(audio_chunk, datainfo)
+            frame_type = self._classify_audio_frame(audio_chunk)
+            self.asr.put_audio_frame(audio_chunk, datainfo, frame_type=frame_type)
+
+    def _classify_audio_frame(self, audio_chunk: NDArray[np.float32]) -> int:
+        if not self.audio_energy_gate_enabled:
+            return 0
+        try:
+            if audio_chunk is None or audio_chunk.size == 0:
+                rms = 0.0
+            else:
+                rms = float(np.sqrt(np.mean(np.asarray(audio_chunk, dtype=np.float32) ** 2) + 1e-12))
+        except Exception:
+            return 0
+        if self._audio_energy_voice_active:
+            if rms < self.audio_speech_off_threshold:
+                self._audio_energy_release_count += 1
+                if self._audio_energy_release_count > self.audio_speech_release_frames:
+                    self._audio_energy_voice_active = False
+                    self._audio_energy_release_count = 0
+            else:
+                self._audio_energy_release_count = 0
+        elif rms >= self.audio_speech_on_threshold:
+            self._audio_energy_voice_active = True
+            self._audio_energy_release_count = 0
+        return 0 if self._audio_energy_voice_active else 1
 
     def put_audio_file(self, filebyte, datainfo:dict={}): 
         input_stream = BytesIO(filebyte)
@@ -864,7 +903,7 @@ class BaseAvatar:
                 self.height, self.width = self.frame_list_cycle[0].shape[:2]
         if self.width <= 0 or self.height <= 0:
             raise RuntimeError("recording frame size is not initialized")
-        record_pipe_preset = os.getenv("LIVETALKING_RECORD_PIPE_PRESET", "ultrafast")
+        record_pipe_preset = os.getenv("LIVETALKING_RECORD_PIPE_PRESET", "fast")
         record_pipe_crf = os.getenv("LIVETALKING_RECORD_PIPE_CRF", "16")
         record_audio_bitrate = os.getenv("LIVETALKING_RECORD_AUDIO_BITRATE", "256k")
         command = ['ffmpeg',

@@ -53,8 +53,9 @@ RESTART_FLAG_PATH = app_root() / ".restart_requested"
 # Recording folder config. record_config.json (repo root) holds the absolute
 # path where finished takes are stored. base_avatar.stop_recording muxes the
 # raw ffmpeg pipes to a STAGING file (data/record.mp4); POST /record/save then
-# moves that staging file into the configured folder under a user-chosen name
-# (or a default record_YYYYMMDD_HHMMSS.mp4). Default folder is data/recordings/.
+# moves that already-encoded staging file into the configured folder under a
+# user-chosen name (or a default record_YYYYMMDD_HHMMSS.mp4). Default folder is
+# data/recordings/.
 RECORD_CONFIG_PATH = app_root() / "record_config.json"
 RECORD_DEFAULT_FOLDER = str(app_root() / "data" / "recordings")
 RECORD_STAGING_PATH = str(app_root() / "data" / "record.mp4")
@@ -268,7 +269,7 @@ async def create_musetalk_avatar(request):
             return json_error("missing uploaded file")
 
         version = (fields.get("version") or "v15").strip() or "v15"
-        parsing_mode = (fields.get("parsing_mode") or "mouth").strip() or "mouth"
+        parsing_mode = (fields.get("parsing_mode") or "jaw").strip() or "jaw"
         bbox_shift = int(fields.get("bbox_shift") or 0)
         extra_margin = int(fields.get("extra_margin") or 10)
         gpu_id = int(fields.get("gpu_id") or getattr(request.app["opt"], "gpu_id", 0))
@@ -680,9 +681,9 @@ async def record_save(request):
     record_<YYYYMMDD_HHMMSS>.mp4 using the recording timestamp. If `discard` is
     truthy, delete the staging file instead of saving it.
 
-    Also trims the leading silence that ElevenLabs v3 introduces (~1-1.5s of
-    TTFB dead air). The WebRTC live stream stays unchanged; only the saved file
-    is trimmed so post-production/editing starts cleanly."""
+    By default this does not re-encode, so save/download is just a filesystem
+    move of the already-encoded recording. Optional legacy leading-silence trim
+    can be enabled with LIVETALKING_RECORD_AUTO_TRIM=true."""
     try:
         params = await request.json()
         sessionid = params.get('sessionid', '')
@@ -731,102 +732,96 @@ async def record_save(request):
                 i += 1
             final = os.path.join(folder, f"{base}_{i}{ext}")
 
-        # Trim leading silence so the saved take starts when speech actually
-        # starts. Detect via silencedetect (noise -50dB, min 50ms). The first
-        # silence_end is where the take really begins; if no silence is found,
-        # keep the whole file.
-        trim_start = 0.0
-        try:
-            proc = await asyncio.create_subprocess_exec(
-                "ffmpeg", "-i", staging, "-af", "silencedetect=noise=-50dB:d=0.05",
-                "-f", "null", "-",
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-            )
-            _, stderr = await proc.communicate()
-            text = stderr.decode("utf-8", errors="ignore")
-            import re
-            first_end = re.search(r"silence_end:\s*([0-9.]+)", text)
-            if first_end:
-                candidate = float(first_end.group(1))
-                # Only trim a noticeable leading silence; ignore tiny gaps.
-                if candidate > 0.15:
-                    # Keep a short pre-roll. Cutting exactly at silence_end can
-                    # land on the first non-zero speech sample and create an
-                    # audible click/buzz at the start of the saved MP4.
-                    preroll = max(
-                        0.0,
-                        float(os.getenv("LIVETALKING_RECORD_TRIM_PREROLL_SEC", "0.25")),
-                    )
-                    trim_start = max(0.0, candidate - preroll)
-        except Exception as exc:
-            logger.warning("record_save: silence detect failed, keeping full file: %s", exc)
-
-        try:
-            if trim_start > 0.15:
-                logger.info("record_save: trimming %.3fs leading silence from %s", trim_start, staging)
-                tmp_trimmed = staging + ".trim.mp4"
-                # Re-encode after trim. Stream-copy seeking after input can keep
-                # the first video packet at a positive timestamp/keyframe (seen as
-                # video start_time ~6s), which makes saved recordings play audio
-                # before video and feel like overlapping speech.
-                record_preset = os.getenv("LIVETALKING_RECORD_X264_PRESET", "slow")
-                record_crf = os.getenv("LIVETALKING_RECORD_CRF", "16")
-                record_audio_bitrate = os.getenv("LIVETALKING_RECORD_AUDIO_BITRATE", "256k")
-                fade_sec = max(
-                    0.0,
-                    float(os.getenv("LIVETALKING_RECORD_AUDIO_FADE_IN_SEC", "0.35")),
-                )
-                audio_advance = max(
-                    0.0,
-                    float(os.getenv("LIVETALKING_RECORD_AUDIO_ADVANCE_SEC", "0.0")),
-                )
-                audio_filters = []
-                if audio_advance > 0.0:
-                    audio_filters.extend([
-                        f"atrim=start={audio_advance:.3f}",
-                        "asetpts=PTS-STARTPTS",
-                        f"apad=pad_dur={audio_advance:.3f}",
-                    ])
-                if fade_sec > 0.0:
-                    audio_filters.append(f"afade=t=in:st=0:d={fade_sec:.3f}")
-                audio_filters.append("alimiter=limit=0.92")
-                trim_cmd = [
-                    "ffmpeg", "-y", "-fflags", "+genpts",
-                    "-ss", str(trim_start), "-i", staging,
-                    "-map", "0:v:0", "-map", "0:a:0",
-                    "-c:v", "libx264", "-preset", record_preset, "-crf", record_crf,
-                    "-af", ",".join(audio_filters),
-                    "-c:a", "aac", "-b:a", record_audio_bitrate,
-                    "-shortest", "-movflags", "+faststart",
-                    "-avoid_negative_ts", "make_zero",
-                    tmp_trimmed,
-                ]
-                trim_proc = await asyncio.create_subprocess_exec(
-                    *trim_cmd,
-                    stdout=asyncio.subprocess.DEVNULL,
+        auto_trim = os.getenv("LIVETALKING_RECORD_AUTO_TRIM", "false").strip().lower() in (
+            "1", "true", "yes", "on"
+        )
+        if auto_trim:
+            # Optional legacy path. It re-encodes because stream-copy seeking can
+            # leave positive video timestamps and cause audio-before-video drift.
+            trim_start = 0.0
+            try:
+                proc = await asyncio.create_subprocess_exec(
+                    "ffmpeg", "-i", staging, "-af", "silencedetect=noise=-50dB:d=0.05",
+                    "-f", "null", "-",
+                    stdout=asyncio.subprocess.PIPE,
                     stderr=asyncio.subprocess.PIPE,
                 )
-                _, trim_stderr = await trim_proc.communicate()
-                ret = trim_proc.returncode
-                if ret == 0 and os.path.exists(tmp_trimmed) and os.path.getsize(tmp_trimmed) > 0:
-                    try:
-                        os.remove(staging)
-                    except OSError:
-                        pass
-                    staging = tmp_trimmed
-                else:
-                    logger.warning(
-                        "record_save: trim ffmpeg failed rc=%s, keeping untrimmed staging: %s",
-                        ret,
-                        trim_stderr.decode("utf-8", errors="ignore")[-1000:] if trim_stderr else "",
+                _, stderr = await proc.communicate()
+                text = stderr.decode("utf-8", errors="ignore")
+                import re
+                first_end = re.search(r"silence_end:\s*([0-9.]+)", text)
+                if first_end:
+                    candidate = float(first_end.group(1))
+                    if candidate > 0.15:
+                        preroll = max(
+                            0.0,
+                            float(os.getenv("LIVETALKING_RECORD_TRIM_PREROLL_SEC", "0.25")),
+                        )
+                        trim_start = max(0.0, candidate - preroll)
+            except Exception as exc:
+                logger.warning("record_save: silence detect failed, keeping full file: %s", exc)
+
+            try:
+                if trim_start > 0.15:
+                    logger.info("record_save: trimming %.3fs leading silence from %s", trim_start, staging)
+                    tmp_trimmed = staging + ".trim.mp4"
+                    record_preset = os.getenv("LIVETALKING_RECORD_X264_PRESET", "fast")
+                    record_crf = os.getenv("LIVETALKING_RECORD_CRF", "16")
+                    record_audio_bitrate = os.getenv("LIVETALKING_RECORD_AUDIO_BITRATE", "256k")
+                    fade_sec = max(
+                        0.0,
+                        float(os.getenv("LIVETALKING_RECORD_AUDIO_FADE_IN_SEC", "0.35")),
                     )
-                    try:
-                        os.remove(tmp_trimmed)
-                    except OSError:
-                        pass
-        except Exception as exc:
-            logger.warning("record_save: trim step failed: %s", exc)
+                    audio_advance = max(
+                        0.0,
+                        float(os.getenv("LIVETALKING_RECORD_AUDIO_ADVANCE_SEC", "0.0")),
+                    )
+                    audio_filters = []
+                    if audio_advance > 0.0:
+                        audio_filters.extend([
+                            f"atrim=start={audio_advance:.3f}",
+                            "asetpts=PTS-STARTPTS",
+                            f"apad=pad_dur={audio_advance:.3f}",
+                        ])
+                    if fade_sec > 0.0:
+                        audio_filters.append(f"afade=t=in:st=0:d={fade_sec:.3f}")
+                    audio_filters.append("alimiter=limit=0.92")
+                    trim_cmd = [
+                        "ffmpeg", "-y", "-fflags", "+genpts",
+                        "-ss", str(trim_start), "-i", staging,
+                        "-map", "0:v:0", "-map", "0:a:0",
+                        "-c:v", "libx264", "-preset", record_preset, "-crf", record_crf,
+                        "-af", ",".join(audio_filters),
+                        "-c:a", "aac", "-b:a", record_audio_bitrate,
+                        "-shortest", "-movflags", "+faststart",
+                        "-avoid_negative_ts", "make_zero",
+                        tmp_trimmed,
+                    ]
+                    trim_proc = await asyncio.create_subprocess_exec(
+                        *trim_cmd,
+                        stdout=asyncio.subprocess.DEVNULL,
+                        stderr=asyncio.subprocess.PIPE,
+                    )
+                    _, trim_stderr = await trim_proc.communicate()
+                    ret = trim_proc.returncode
+                    if ret == 0 and os.path.exists(tmp_trimmed) and os.path.getsize(tmp_trimmed) > 0:
+                        try:
+                            os.remove(staging)
+                        except OSError:
+                            pass
+                        staging = tmp_trimmed
+                    else:
+                        logger.warning(
+                            "record_save: trim ffmpeg failed rc=%s, keeping untrimmed staging: %s",
+                            ret,
+                            trim_stderr.decode("utf-8", errors="ignore")[-1000:] if trim_stderr else "",
+                        )
+                        try:
+                            os.remove(tmp_trimmed)
+                        except OSError:
+                            pass
+            except Exception as exc:
+                logger.warning("record_save: trim step failed: %s", exc)
 
         shutil.move(staging, final)
         if avatar_session is not None:
