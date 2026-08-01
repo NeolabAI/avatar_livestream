@@ -791,7 +791,7 @@ async def record_save(request):
                 if fade_sec > 0.0:
                     audio_filters.append(f"afade=t=in:st=0:d={fade_sec:.3f}")
                 audio_filters.append("alimiter=limit=0.92")
-                ret = subprocess.call([
+                trim_cmd = [
                     "ffmpeg", "-y", "-fflags", "+genpts",
                     "-ss", str(trim_start), "-i", staging,
                     "-map", "0:v:0", "-map", "0:a:0",
@@ -801,7 +801,14 @@ async def record_save(request):
                     "-shortest", "-movflags", "+faststart",
                     "-avoid_negative_ts", "make_zero",
                     tmp_trimmed,
-                ])
+                ]
+                trim_proc = await asyncio.create_subprocess_exec(
+                    *trim_cmd,
+                    stdout=asyncio.subprocess.DEVNULL,
+                    stderr=asyncio.subprocess.PIPE,
+                )
+                _, trim_stderr = await trim_proc.communicate()
+                ret = trim_proc.returncode
                 if ret == 0 and os.path.exists(tmp_trimmed) and os.path.getsize(tmp_trimmed) > 0:
                     try:
                         os.remove(staging)
@@ -809,7 +816,11 @@ async def record_save(request):
                         pass
                     staging = tmp_trimmed
                 else:
-                    logger.warning("record_save: trim ffmpeg failed, keeping untrimmed staging")
+                    logger.warning(
+                        "record_save: trim ffmpeg failed rc=%s, keeping untrimmed staging: %s",
+                        ret,
+                        trim_stderr.decode("utf-8", errors="ignore")[-1000:] if trim_stderr else "",
+                    )
                     try:
                         os.remove(tmp_trimmed)
                     except OSError:
