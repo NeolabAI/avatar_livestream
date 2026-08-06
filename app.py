@@ -78,6 +78,7 @@ def build_avatar_session(sessionid:str, params:dict)->BaseAvatar:
     opt_this.sessionid = sessionid
 
     avatar_id = params.get('avatar',opt.avatar_id) 
+    opt_this.avatar_id = avatar_id
     ref_audio = params.get('refaudio','') #音色
     ref_text = params.get('reftext','')
     if (avatar_id and avatar_id != opt.avatar_id):

@@ -49,7 +49,8 @@ from av import AudioFrame, VideoFrame
 from fractions import Fraction
 
 from utils.logger import logger
-from utils.image import read_imgs,mirror_index
+from utils.image import analyze_loop_frames, forward_loop_index, read_imgs, mirror_index
+from utils.app_root import app_root
 from server.chat_history import chat_history_store
 
 # class State(Enum):
@@ -65,6 +66,8 @@ class AudioFrameData:
     userdata: dict = field(default_factory=dict)
 
 class BaseAvatar:
+    _body_loop_profile_cache = {}
+
     def __init__(self, opt):
         self.opt = opt
         # Output/I-O sample rate of the whole avatar audio pipeline. Raised from
@@ -86,6 +89,10 @@ class BaseAvatar:
         self.speaking = False
         self._tts_stream_ending = False  # True when the TTS source has no more audio
         self.body_index_step = max(0.05, float(os.getenv("LIVETALKING_BODY_INDEX_STEP", "1.0")))
+        self.body_loop_mode = os.getenv("LIVETALKING_BODY_LOOP_MODE", "forward").strip().lower()
+        self.body_loop_start = 0
+        self.body_loop_end = None
+        self.body_loop_profile = None
         self.visual_speech_hangover_sec = max(
             0.0,
             float(os.getenv("LIVETALKING_VISUAL_SPEECH_HANGOVER_SEC", "0.55")),
@@ -128,6 +135,10 @@ class BaseAvatar:
         self.recording = False
         self._record_video_pipe = None
         self._record_audio_pipe = None
+        self._record_started_at = 0.0
+        self._record_frame_count = 0
+        self._record_repeat_count = 0
+        self._record_previous_probe = None
         # Path of the most recent muxed staging file (data/record.mp4) and the
         # unix ts at which stop_recording finished. routes.py reads these to
         # move the take into the user-configured folder with a chosen name.
@@ -432,6 +443,15 @@ class BaseAvatar:
             "asr_output_queue_size": self._safe_qsize(getattr(self.asr, "output_queue", None)) if hasattr(self, "asr") else -1,
             "asr_feat_queue_size": self._safe_qsize(getattr(self.asr, "feat_queue", None)) if hasattr(self, "asr") else -1,
             "audio_out_queue_size": self._safe_qsize(getattr(self, "audio_out_queue", None)) if hasattr(self, "audio_out_queue") else -1,
+            "recording": int(bool(self.recording)),
+            "record_frame_count": int(self._record_frame_count),
+            "record_repeat_count": int(self._record_repeat_count),
+            "record_wall_fps": round(
+                self._record_frame_count / max(0.001, time.perf_counter() - self._record_started_at), 3
+            ) if self.recording and self._record_started_at else 0.0,
+            "body_loop_mode": self.body_loop_mode,
+            "body_loop_start": int(self.body_loop_start),
+            "body_loop_end": int(self.body_loop_end or 0),
             "render_step_sec": round(float(self._telemetry_metrics.get("render_step_sec", 0.0)), 6),
             "render_backpressure_sleep_sec": round(float(self._telemetry_metrics.get("render_backpressure_sleep_sec", 0.0)), 6),
             "inference_batch_sec": round(float(self._telemetry_metrics.get("inference_batch_sec", 0.0)), 6),
@@ -940,6 +960,10 @@ class BaseAvatar:
                     f'temp{self.opt.sessionid}.aac']
         self._record_audio_pipe = subprocess.Popen(acommand, shell=False, stdin=subprocess.PIPE)
 
+        self._record_started_at = time.perf_counter()
+        self._record_frame_count = 0
+        self._record_repeat_count = 0
+        self._record_previous_probe = None
         self.recording = True
         logger.info("record started: session=%s size=%sx%s sample_rate=%s", self.opt.sessionid, self.width, self.height, self.sample_rate)
     
@@ -948,6 +972,13 @@ class BaseAvatar:
             self.height, self.width, _ = image.shape
         if self.recording:
             self._record_video_pipe.stdin.write(image.tostring())
+            self._record_frame_count += 1
+            probe = cv2.resize(image, (64, 64), interpolation=cv2.INTER_AREA)
+            if self._record_previous_probe is not None:
+                diff = float(np.mean(cv2.absdiff(probe, self._record_previous_probe)))
+                if diff <= 0.5:
+                    self._record_repeat_count += 1
+            self._record_previous_probe = probe
 
     def record_audio_data(self, frame):
         if self.recording:
@@ -1021,6 +1052,53 @@ class BaseAvatar:
         if hasattr(self, 'frame_list_cycle'):
             return len(self.frame_list_cycle)
         return 1
+
+    def configure_body_loop(self):
+        """Load creation-time loop metadata or analyze legacy avatar frames."""
+        frames = getattr(self, "frame_list_cycle", None) or []
+        length = len(frames)
+        if length <= 1 or self.body_loop_mode == "mirror":
+            self.body_loop_start, self.body_loop_end = 0, length
+            return
+
+        profile = None
+        avatar_id = str(getattr(self.opt, "avatar_id", "") or "")
+        cache_key = (avatar_id, length)
+        profile = self._body_loop_profile_cache.get(cache_key)
+        info_path = app_root() / "data" / "avatars" / avatar_id / "avator_info.json"
+        if profile is None:
+            try:
+                with info_path.open("r", encoding="utf-8") as fp:
+                    profile = json.load(fp).get("loop_profile")
+            except (OSError, ValueError, TypeError):
+                profile = None
+        if not isinstance(profile, dict) or int(profile.get("frame_count", -1)) != length:
+            profile = analyze_loop_frames(
+                frames,
+                fps=getattr(self.opt, "fps", 25),
+                min_seconds=float(os.getenv("LIVETALKING_BODY_LOOP_MIN_SEC", "8")),
+                max_seconds=float(os.getenv("LIVETALKING_BODY_LOOP_MAX_SEC", "16")),
+            )
+        self._body_loop_profile_cache[cache_key] = profile
+        self.body_loop_profile = profile
+        self.body_loop_start = max(0, min(int(profile.get("start", 0)), length - 1))
+        self.body_loop_end = max(
+            self.body_loop_start + 1,
+            min(int(profile.get("end", length)), length),
+        )
+        logger.info(
+            "body loop: avatar=%s mode=forward range=[%d,%d) frames=%d seam_diff=%s",
+            avatar_id,
+            self.body_loop_start,
+            self.body_loop_end,
+            self.body_loop_end - self.body_loop_start,
+            profile.get("seam_mean_abs_diff", "n/a"),
+        )
+
+    def body_frame_index(self, length, index):
+        if self.body_loop_mode == "mirror":
+            return mirror_index(length, index)
+        return forward_loop_index(length, index, self.body_loop_start, self.body_loop_end)
 
     def on_tts_stream_start(self):
         """Called by the TTS player when a new utterance begins streaming.
@@ -1110,7 +1188,7 @@ class BaseAvatar:
                 self._tts_stream_ending = False
                 _silence_start = time.perf_counter()
                 frame_indices = [
-                    mirror_index(length, index + i * self.body_index_step)
+                    self.body_frame_index(length, index + i * self.body_index_step)
                     for i in range(self.batch_size)
                 ]
                 for i in range(self.batch_size):
@@ -1140,7 +1218,7 @@ class BaseAvatar:
                 # keeps flowing while the model recovers (or so the failure shows up
                 # in wrapper.log instead of a silent hang).
                 frame_indices = [
-                    mirror_index(length, index + i * self.body_index_step)
+                    self.body_frame_index(length, index + i * self.body_index_step)
                     for i in range(self.batch_size)
                 ]
                 try:

@@ -222,6 +222,7 @@ class MuseReal(BaseAvatar):
         self.vae, self.unet, self.pe, self.timesteps, self.audio_processor = model
 
         self.frame_list_cycle,self.mask_list_cycle,self.coord_list_cycle,self.mask_coords_list_cycle, self.input_latent_list_cycle = avatar
+        self.configure_body_loop()
 
         self.asr = WhisperASR(opt,self,self.audio_processor)
         self.asr.warm_up()

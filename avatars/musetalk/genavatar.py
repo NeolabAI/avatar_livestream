@@ -20,6 +20,7 @@ from tqdm import tqdm
 from avatars.musetalk.utils.preprocessing import get_landmark_and_bbox, read_imgs
 from avatars.musetalk.utils.blending import get_image_prepare_material
 from avatars.musetalk.utils.utils import load_all_model
+from utils.image import analyze_loop_frames
 
 try:
     from utils.face_parsing import FaceParsing
@@ -495,14 +496,14 @@ def create_musetalk_human(
     coords_path = os.path.join(current_dir, f'{save_path}/coords.pkl')
     latents_out_path = os.path.join(current_dir, f'{save_path}/latents.pt')
 
-    with open(os.path.join(current_dir, f'{save_path}/avator_info.json'), "w") as f:
-        json.dump({
-            "avatar_id": avatar_id,
-            "video_path": file,
-            "bbox_shift": bbox_shift,
-            "version": version,
-            "parsing_mode": parsing_mode,
-        }, f)
+    avatar_info = {
+        "avatar_id": avatar_id,
+        "video_path": file,
+        "bbox_shift": bbox_shift,
+        "version": version,
+        "parsing_mode": parsing_mode,
+    }
+    output_fps = max(1, int(os.getenv("LIVETALKING_AVATAR_OUTPUT_FPS", "25")))
 
     if os.path.isfile(file):
         if is_video_file(file):
@@ -512,7 +513,6 @@ def create_musetalk_human(
             # Set LIVETALKING_AVATAR_MAX_FRAMES only when intentionally trading
             # motion smoothness for faster avatar creation.
             max_frames = int(os.getenv("LIVETALKING_AVATAR_MAX_FRAMES", "0"))
-            output_fps = int(os.getenv("LIVETALKING_AVATAR_OUTPUT_FPS", "25"))
             written = video2imgs(file, save_full_path, ext='png',
                                  max_frames=max_frames, output_fps=output_fps)
         else:
@@ -526,6 +526,26 @@ def create_musetalk_human(
     input_img_list = sorted(glob.glob(os.path.join(save_full_path, '*.[jpJP][pnPN]*[gG]')))
     print("extracting landmarks...")
     coord_list, frame_list = get_landmark_and_bbox(input_img_list, bbox_shift)
+    loop_profile = analyze_loop_frames(
+        frame_list,
+        fps=output_fps,
+        min_seconds=float(os.getenv("LIVETALKING_BODY_LOOP_MIN_SEC", "8")),
+        max_seconds=float(os.getenv("LIVETALKING_BODY_LOOP_MAX_SEC", "16")),
+    )
+    avatar_info["loop_profile"] = loop_profile
+    with open(os.path.join(current_dir, f'{save_path}/avator_info.json'), "w", encoding="utf-8") as f:
+        json.dump(avatar_info, f, indent=2)
+    if loop_profile.get("abrupt_transitions"):
+        print(
+            "WARNING: abrupt source-frame transitions detected: "
+            f"{loop_profile['abrupt_transitions'][:5]}"
+        )
+    print(
+        "selected forward body loop: "
+        f"[{loop_profile['start']}, {loop_profile['end']}) "
+        f"{loop_profile.get('loop_seconds', 0)}s, "
+        f"seam_diff={loop_profile.get('seam_mean_abs_diff', 0)}"
+    )
     coord_placeholder = (0.0, 0.0, 0.0, 0.0)
     if version == "v15":
         for idx, bbox in enumerate(coord_list):
@@ -602,6 +622,7 @@ def create_musetalk_human(
     with open(coords_path, 'wb') as f:
         pickle.dump(coord_list_cycle, f)
     torch.save(input_latent_list_cycle, os.path.join(latents_out_path))
+    return loop_profile
 
 
 # initialize the mmpose model

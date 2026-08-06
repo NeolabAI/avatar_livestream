@@ -219,6 +219,7 @@ class LipReal(BaseAvatar):
         self.model = model
 
         self.frame_list_cycle,self.face_list_cycle,self.coord_list_cycle = avatar
+        self.configure_body_loop()
 
         self.asr = MelASR(opt,self)
         self.asr.warm_up()

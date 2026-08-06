@@ -828,18 +828,22 @@ $(document).ready(function () {
             }
 
             const newAvatarId = payload.data && payload.data.avatar_id ? payload.data.avatar_id : avatarId;
+            const loopProfile = payload.data && payload.data.loop_profile ? payload.data.loop_profile : null;
+            const qualityNote = loopProfile && Array.isArray(loopProfile.abrupt_transitions) && loopProfile.abrupt_transitions.length
+                ? ' Đã phát hiện ' + Number(loopProfile.abrupt_transition_count || loopProfile.abrupt_transitions.length) + ' chuyển động nguồn đột ngột; runtime sẽ chỉ dùng đoạn loop ổn định ' + Number(loopProfile.loop_seconds || 0).toFixed(1) + ' giây.'
+                : '';
             $('#new-avatar-file').val('');
             $('#new-avatar-id').val(newAvatarId);
             if (model === window.runningModel) {
                 // avatar type matches the running server -> select it immediately.
                 await loadAvatarCatalog(newAvatarId);
                 $('#avatar-select').data('last-selected', newAvatarId).val(newAvatarId);
-                setStatus(successMsg + newAvatarId + '. Ngắt kết nối và kết nối lại để dùng avatar này nếu session đang mở.');
+                setStatus(successMsg + newAvatarId + '.' + qualityNote + ' Ngắt kết nối và kết nối lại để dùng avatar này nếu session đang mở.');
             } else {
                 // avatar type doesn't match the running server model -> refresh the
                 // list (keeps current selection) and tell the user to switch model.
                 await loadAvatarCatalog();
-                setStatus(successMsg + newAvatarId + '. Dùng card “Server model” để chuyển sang ' + modelLabel(model) + ' rồi dùng avatar này.');
+                setStatus(successMsg + newAvatarId + '.' + qualityNote + ' Dùng card “Server model” để chuyển sang ' + modelLabel(model) + ' rồi dùng avatar này.');
             }
         } catch (err) {
             console.error('create avatar error:', err);

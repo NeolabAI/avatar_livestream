@@ -277,7 +277,7 @@ async def create_musetalk_avatar(request):
         right_cheek_width = int(fields.get("right_cheek_width") or 90)
 
         loop = asyncio.get_event_loop()
-        await loop.run_in_executor(
+        loop_profile = await loop.run_in_executor(
             None,
             musetalk_genavatar.create_musetalk_human,
             str(upload_path),
@@ -297,7 +297,7 @@ async def create_musetalk_avatar(request):
         except OSError:
             pass
 
-        return json_ok(data={"avatar_id": avatar_id, "model": "musetalk"})
+        return json_ok(data={"avatar_id": avatar_id, "model": "musetalk", "loop_profile": loop_profile})
     except Exception as e:
         logger.exception("create_musetalk_avatar exception:")
         return json_error(str(e))
